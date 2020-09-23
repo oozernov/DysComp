@@ -1,8 +1,9 @@
-
+###Ganong Analysis
+#Ola Ozernov-Palchik oozernov@mit.edu
 
 Packages <- c("dplyr", "reshape", "magrittr", "tidyr", "ggplot2", 
               "lme4", "lmerTest","emmeans", "sjstats", "plotrix","dabestr","lmerTest",
-              "lmPerm","gridExtra", "grid","ggpubr")
+              "lmPerm","gridExtra", "grid","ggpubr",'sjmisc','relaimpo')
 lapply(Packages, library, character.only = TRUE)
 
 
@@ -551,29 +552,70 @@ omit<-d_prime%>%filter(d<0 | d==0)
 
 ##################individual difference######################################
 
-setwd("~/Dropbox (MIT)/Com_Dys_2016_data/beh_data/new_data_summary")
-d2 = read.csv("organized_v3.csv",
-              na.strings = c("", "NA","9999","5555","8888"))
-d=read.csv("~/Dropbox (MIT)/Com_Dys_2016_data/beh_data/IDs_v1.csv",
-           na.strings = c("", "NA","9999","5555","8888"))
-d2=merge(d2,d,"PartID")
-#d2 = d2 %>% filter(PartID != 'READ_4521') #try withe excluding older child age=10
+beh = read.csv("~/Dropbox (MIT)/GitHub/DysComp2/Ind_Diff/all_beh.csv")
+names(beh)[names(beh)=="ID"] <- "PartID"
+beh$a_c<-as.factor(beh$a_c)
+beh$Study<-as.factor(beh$Study)
 
-psych::describeBy(d2, d2$Group,d2$Study)
-#d=dplyr::select(d,PartID,group,gender,age_group,age,age_mos,contains("ss"),"CTMD)
-d2$X<-NULL
-d2$group.x<-NULL
-d2$group.y<-NULL
-d2$TSWE<-as.numeric(d2$TSWE)
-d2$PPVT<-as.numeric(d2$PPVT)
+lexical_g_5<-lexical_g %>%filter(step==5) #lexical effect at step 5
+slope_inf = d_glm_fit %>%
+  dplyr::group_by(PartID, group) %>%
+  dplyr::summarise(mean_s = mean(slope_coef_t, na.rm = T),mean_i=mean(inflection_step))
 
-d3=dplyr::select(d2,PartID,group,age_group,gender,age,KBITss,twse,TPDE,
-                 gort_roi,WWA,WID,ctel,ctbw,ppvt,ran_2,CTMD,CELF_core,WRMT_LC)
-lexical_g_5<-lexical_g %>%filter(step==5)
-beh_d=merge(d3,lexical_g_5,"PartID")
-beh_slope=merge(d3,d_glm_fit_gith,"PartID")
-beh_slope2=merge(d3,d_glm_m_slope,"PartID")
-summary(lm(diff~group.x*age_group+ppvt+KBITss+ctel+ctbw+ran_2, data=beh_d))
+
+beh_d=merge(beh,lexical_g_5,"PartID")
+beh_slope=merge(beh_d,d_glm_fit_gith,"PartID")
+beh_slope2=merge(beh_d,slope_inf,"PartID")
+
+###Model lexical effects
+#across everyone
+m1<-lm(diff~Age+Study+a_c+Vocab+IQ+Elision+Blending+NonWord+LC, data=beh_d) #elision is main
+step <- stepAIC(m1, direction = "both",steps = 1000)
+step$anova 
+
+#beh_d2<-beh_d%>%filter(Study!='READER')
+beh_d_d<-beh_d%>%filter(DD==1)
+beh_d_t<-beh_d%>%filter(DD==0)
+
+#in dyslexia group only
+m2<-lm(diff~Age+Study+a_c+Vocab+IQ+Elision+Blending+NonWord+RANO+LC+Vocab*Elision, data=beh_d_d) #elision is main
+step2 <- stepAIC(m2, direction = "both",steps = 1000)
+step2$anova #diff ~ Study + Vocab + Elision + Blending + Vocab:Elision
+theme_set(theme_sjplot())
+sjPlot::plot_model(m2, type = "int", terms = c("Elision", "Vocab"),mdrt.values = "minmax") #plot interaction
+
+beh_d_d_a<-beh_d_d%>%filter(a_c=='a')
+beh_d_d_c<-beh_d_d%>%filter(a_c=='c')
+
+#in adults with dys only
+m4<-lm(diff~Age+IQ+Blending+NonWord+RANO+LC+Vocab*Elision, data=beh_d_d_a) #elision is main
+step4 <- stepAIC(m4, direction = "both",steps = 1000)
+step4$anova #diff ~ Vocab + Elision + Vocab:Elision
+sjPlot::plot_model(m4, type = "int", terms = c("Elision","Vocab"),mdrt.values = "minmax")
+#sjPlot::plot_model(m4, type = "int", terms = c("Elision","Vocab"),mdrt.values = "meansd")
+
+#in kids with dys only
+m5<-lm(diff~Age+IQ+Blending+NonWord+RANO+LC+Vocab*Elision,data=beh_d_d_c) #elision is main
+step5 <- stepAIC(m5, direction = "both",steps = 1000)
+step5$anova #diff ~ Blending
+
+m3<-lm(diff~Age+Study+a_c+Vocab+IQ+Elision+Blending+NonWord+RANO+LC+Elision*Vocab, data=beh_d_t) #elision is main
+step3 <- stepAIC(m3, direction = "both",steps = 1000)
+step3$anova #diff ~ Elision + NonWord
+
+sjPlot::plot_model(m3, type = "pred", terms = c("Elision"))
+plot(beh_d_t$Elision,beh_d_t$diff)
+
+ # age is the main vairiable so divide by age
+
+beh_d_d_a<-beh_d_d%>%filter(a_c=='a')
+beh_d_d_c<-beh_d_d%>%filter(a_c=='c')
+
+anova(lm(diff~Age+Vocab+IQ+DigitsFw+DigitsBck+Elision+Blending+NonWord+LC, data=beh_d_d)) #age is main
+anova(lm(diff~Study+Age+Vocab+IQ+Elision+Blending+NonWord+LC, data=beh_d_d_c)) #el
+
+
+##OLD
 summary(lm(slope_coef_t~group.x*age_group+ppvt+KBITss+ctel+ctbw+ran_2, data=beh_slope))
 summary(lm(mean~group.x*age_group+ppvt+KBITss+ctel+ctbw+ran_2, data=beh_slope))
 

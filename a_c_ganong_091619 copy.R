@@ -230,7 +230,7 @@ lsmeans(model_gith, list(pairwise ~ group|age), adjust = "tukey")
 
 ########################## Plot slope effect ##########################
 d_glm_m_slope = d_glm_fit %>%
-  dplyr::group_by(PartID, group,com_cond) %>%
+  dplyr:(:group_by(PartID, group,com_cond) %>%
   dplyr::summarise(mean = mean(slope_coef_t, na.rm = T))
 
 multi.group <- 

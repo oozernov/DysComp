@@ -1,0 +1,691 @@
+---
+title: "Ganong Notebook"
+output:
+  word_document: default
+  html_notebook: default
+---
+
+# Data merge and clean
+
+## Load packages
+```{r, include=FALSE,echo=FALSE}
+Packages <- c("dplyr", "reshape", "magrittr", "tidyr", "ggplot2", 
+              "lme4", "lmerTest","emmeans", "sjstats", "plotrix","dabestr","lmerTest",
+              "lmPerm","gridExtra", "grid","ggpubr")
+lapply(Packages, library, character.only = TRUE)
+```
+
+## Load data
+```{r, include=FALSE,echo=FALSE}
+setwd("~/Dropbox (MIT)/Com_Dys_2016_data/final_for_sharing/final_code_JT/data")
+
+## load adult data
+#adult = read.csv("phonwords_data_a_010719.csv", header = T, na.strings = c("", "NA"))
+adult = read.csv("phonword_all_102020.csv", header = T, na.strings = c("", "NA"))
+
+#exclude the 'd' continuum from adult dataset
+#adult=adult %>%
+  #filter(grepl("gi", tolower(soundfile)))
+
+#load adult data
+groups_a = read.csv("adult_groups_012418.csv", header = T, na.strings = c("", "NA"))
+## load child data
+child = read.csv("child_phonwords_data_102120.csv", header = T, na.strings = c("", "NA"))
+
+groups_c = read.csv("groups_041817.csv", header = T, na.strings = c("", "NA"))
+
+
+# add DD columns to the data
+child = merge(child, groups_c, by = "PartID")
+adult = merge(adult, groups_a, by = "Subject")
+names(adult)[names(adult) == 'Subject'] <- 'PartID'
+
+child$group<-ifelse(child$Typical==1, "Typ","Dys")
+child$group<-as.factor(child$group)
+adult$X <- NULL
+adult$X.y <- NULL
+adult$X.1 <- NULL
+child$Subject <- NULL
+child$DD <- NULL
+child$Typical <- NULL
+
+##combine the datasets
+adult$age<-"Adult"
+child$age<-"Child"
+
+d = bind_rows(adult, child) #changed from 'combine' to 'bind_rows'
+
+
+groups_c$group = ifelse(groups_c$Typical==1, "Typ","Dys")
+groups_a$X <- NULL
+groups_a$X.1 <- NULL
+groups_c$DD <- NULL
+groups_c$Typical <- NULL
+names(groups_a)[names(groups_a) == 'Subject'] <- 'PartID'
+
+groups = bind_rows(groups_a, groups_c)
+
+d_all<-read.csv("phonword_all_102020.csv")
+
+# make new columns that will let us separate by continuum
+new_columns = colsplit(d$soundfile, "-", names=c("word", "rest"))
+d = cbind(d, new_columns)
+new_columns = colsplit(d$rest, "", names=c("n_step","w", "x", "y", "z"))
+d = cbind(d, new_columns)
+d=d%>%filter(!(PartID %in% c('READ_6103','5028'))) #READ_6103-below chance, READ_5028-partial trials
+
+
+# get rid of columns we don't need
+d$rest <- NULL
+d$w <- NULL
+d$x <- NULL
+d$y <- NULL
+d$z <- NULL
+
+d$com_cond = paste(d$group, "-", d$age)
+
+
+# define some vectors to use for graphs later
+x_ticks = c(1,2,3,4,5,6,7)
+y_ticks = c(0,10,20,30,40,50,60,70,80,90,100)
+y_new_ticks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+```
+
+# Inspect and Analyze
+
+##Look at raw data
+### G Pairs
+```{r, echo=FALSE}
+
+
+d_g = d %>% filter(word %in% c('gift', 'gith', 'giss'))
+d_g$phoneme_g = ifelse(d_g$response == 'G', 1, 0)
+d_conts = d_g %>% dplyr::group_by(com_cond, word, n_step) %>%
+  dplyr::summarise(percent_g = mean(phoneme_g, na.rm = T))
+d_conts$word_pair = ifelse(d_conts$word == "gift", "gift-kift",
+                           ifelse(d_conts$word == "gith", "gith-kith", "giss-kiss"))
+
+
+ggplot(d_conts, aes(colour=word_pair, y=percent_g*100, x=n_step)) + 
+  geom_point() + geom_line() + 
+  scale_x_continuous(breaks = x_ticks, limits = c(1, 7)) + 
+  scale_y_continuous(breaks = y_ticks, limits = c(0, 100)) + 
+  labs(x = "Step", y = "% /g/ response", title = "Raw /g/ Response") +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = 'white'),
+        legend.position = "right", 
+        plot.title = element_text(hjust = 0.5)) +
+  facet_wrap(~com_cond, ncol = 2)
+```
+### D Pairs
+```{r, echo=FALSE}
+d_d = d %>% filter(word %in% c('dash', 'dask', 'dath'))
+d_d$phoneme_d = ifelse(d_d$response == 'D', 1, 0)
+d_conts_d = d_d %>% dplyr::group_by(com_cond, word, n_step) %>%
+  dplyr::summarise(percent_d = mean(phoneme_d, na.rm = T))
+d_conts_d$word_pair = ifelse(d_conts_d$word == "dash", "dash-tash",
+                           ifelse(d_conts_d$word == "dath", "dath-tath", "dask-task"))
+
+
+ggplot(d_conts_d, aes(colour=word_pair, y=percent_d*100, x=n_step)) + 
+  geom_point() + geom_line() + 
+  scale_x_continuous(breaks = x_ticks, limits = c(1, 7)) + 
+  scale_y_continuous(breaks = y_ticks, limits = c(0, 100)) + 
+  labs(x = "Step", y = "% /d/ response", title = "Raw /d/ Response") +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = 'white'),
+        legend.position = "right", 
+        plot.title = element_text(hjust = 0.5)) +
+  facet_wrap(~com_cond, ncol = 2)
+```
+### Check num of trials
+```{r, include=FALSE, echo=FALSE}
+####check for number of trials####
+require(data.table)
+d_test = d %>% dplyr::group_by(PartID) %>%
+  dplyr::summarise(test = uniqueN(trialNum, na.rm = T))
+range(d_test$test)
+
+d_export = d_g %>% filter(word == 'gith') %>% 
+  dplyr::group_by(PartID, n_step, group, age) %>% 
+  dplyr::summarise(m_g = mean(phoneme_g, na.rm = T))
+d_export = distinct(data.frame(d_export[, c("PartID")]))
+names(d_export)=c("PartID")
+
+# Check # of trials per each subject / word 
+data_tmp4check <- aggregate(n_step ~ PartID * word * com_cond , FUN=NROW, data = d )
+unique(data_tmp4check[data_tmp4check$n_step != 21,])
+View(data_tmp4check)
+length(unique(d$PartID))
+
+data_tmp4check <- aggregate(trialNum ~ PartID * com_cond , max, data = d )
+data_tmp4check <- aggregate(trialNum ~ PartID * com_cond * , FUN=NROW, data = d )
+data_tmp4check <- aggregate(trialNum ~ PartID * com_cond * word_category, FUN=NROW, data = d )
+
+data_tmp4check[data_tmp4check$trialNum !=126,1]
+View(d[d$PartID == 'READ_6103',])
+```
+
+
+### Sample Size
+```{r, echo=FALSE}
+counts = d %>% dplyr::group_by(PartID, age) %>%
+  dplyr::summarise(m = mean(n_step))
+counts = merge(counts, groups, by = "PartID")
+dplyr::count(counts, age, group)
+```
+## Fit Logistic Regression G
+
+```{r, include=FALSE, echo=FALSE}
+calc_g = d_g %>%
+  dplyr::group_by(PartID, word, n_step, group, age, com_cond) 
+  #dplyr::summarise(prop_g = mean(phoneme_g, na.rm = T))
+
+d_glm_fit = data.frame(PartID = rep(0, 10), 
+                       word = rep(0, 10), 
+                       group = rep(0, 10), 
+                       age = rep(0, 10), 
+                       com_cond = rep(0, 10),
+                       slope_coef = rep(0, 10), 
+                       inflection_step = rep(0, 10), 
+                       value_at_gith_i = rep(0, 10), 
+                       deviance = rep(0, 10))
+index = 0
+for (sub in d_export$PartID) { 
+  index = index + 1
+  temp = calc_g %>% filter(PartID == sub)
+  temp_gift = temp %>% filter(word == "gift")
+  temp_gith = temp %>% filter(word == "gith")
+  temp_giss = temp %>% filter(word == "giss")
+  
+  temp_group = as.character(temp$group[1])
+  temp_age = as.character(temp$age[1])
+  temp_com_cond = as.character(temp$com_cond[1])
+  
+  model_gift <- glm(phoneme_g ~ n_step, family = binomial(link = 'logit'), data = temp_gift)
+  model_gith <- glm(phoneme_g ~ n_step, family = binomial(link = 'logit'), data = temp_gith)
+  model_giss <- glm(phoneme_g ~ n_step, family = binomial(link = 'logit'), data = temp_giss)
+  
+  b_gith = as.numeric(model_gith$coefficients[1])
+  m_gith = as.numeric(model_gith$coefficients[2])
+  i_gith = -b_gith/m_gith #-intercept/slope
+  dev_fit_gith = as.numeric(deviance(model_gith))
+  gith_x = data.frame('n_step' = i_gith)
+  value_gith_frame = data.frame(gith_x$n_step, predict(model_gith, list(n_step = gith_x$n_step), type = 'response'))
+  value_gith = value_gith_frame[[2]]
+  new2 = c(sub, "gith", temp_group, temp_age, temp_com_cond, m_gith, i_gith, value_gith, dev_fit_gith)
+  d_glm_fit[index, ] = new2
+  index = index + 1
+  
+  b_gift = as.numeric(model_gift$coefficients[1])
+  m_gift = as.numeric(model_gift$coefficients[2])
+  i_gift = -b_gift/m_gift
+  dev_fit_gift = as.numeric(deviance(model_gift))
+  value_gift_frame = data.frame(gith_x$n_step, predict(model_gift, list(n_step = gith_x$n_step), type = 'response'))
+  value_gift = value_gift_frame[[2]]
+  new1 = c(sub, "gift", temp_group, temp_age, temp_com_cond, m_gift, i_gift, value_gift, dev_fit_gift)
+  d_glm_fit[index, ] = new1
+  index = index + 1
+  
+  b_giss = as.numeric(model_giss$coefficients[1])
+  m_giss = as.numeric(model_giss$coefficients[2])
+  i_giss = -b_giss/m_giss
+  dev_fit_giss = as.numeric(deviance(model_giss))
+  value_giss_frame = data.frame(gith_x$n_step, predict(model_giss, list(n_step = gith_x$n_step), type = 'response'))
+  value_giss = value_giss_frame[[2]]
+  new3 = c(sub, "giss", temp_group, temp_age, temp_com_cond, m_giss, i_giss, value_giss, dev_fit_giss)
+  d_glm_fit[index, ] = new3
+}
+
+d_glm_fit$slope_coef = as.numeric(d_glm_fit$slope_coef)
+d_glm_fit$inflection_step = as.numeric(d_glm_fit$inflection_step)
+d_glm_fit$deviance = as.numeric(d_glm_fit$deviance)
+d_glm_fit$word<-as.factor(d_glm_fit$word)
+d_glm_fit$group<-as.factor(d_glm_fit$group)
+d_glm_fit$age<-as.factor(d_glm_fit$age)
+
+```
+
+```{r, include=FALSE, echo=FALSE}
+
+d_export_d = d_d %>% filter(word == 'dath') %>% 
+  dplyr::group_by(PartID, n_step, group, age) %>% 
+  dplyr::summarise(m_d = mean(phoneme_d, na.rm = T))
+d_export_d = distinct(data.frame(d_export_d[, c("PartID")]))
+names(d_export_d)=c("PartID")
+
+##### 7. glm logistic regression to extract slope/inflection #####
+calc_d = d_d %>%
+  dplyr::group_by(PartID, word, n_step, group, age, com_cond) 
+  #dplyr::summarise(prop_g = mean(phoneme_g, na.rm = T))
+
+d_glm_fit_d = data.frame(PartID = rep(0, 10), 
+                       word = rep(0, 10), 
+                       group = rep(0, 10), 
+                       age = rep(0, 10), 
+                       com_cond = rep(0, 10),
+                       slope_coef = rep(0, 10), 
+                       inflection_step = rep(0, 10), 
+                       value_at_dath_i = rep(0, 10), 
+                       deviance = rep(0, 10))
+index = 0
+for (sub in d_export_d$PartID) { 
+  index = index + 1
+  temp = calc_d %>% filter(PartID == sub)
+  temp_dash = temp %>% filter(word == "dash")
+  temp_dath = temp %>% filter(word == "dath")
+  temp_dask = temp %>% filter(word == "dask")
+  
+  temp_group = as.character(temp$group[1])
+  temp_age = as.character(temp$age[1])
+  temp_com_cond = as.character(temp$com_cond[1])
+  
+  model_dash <- glm(phoneme_d ~ n_step, family = binomial(link = 'logit'), data = temp_dash)
+  model_dath <- glm(phoneme_d ~ n_step, family = binomial(link = 'logit'), data = temp_dath)
+  model_dask <- glm(phoneme_d ~ n_step, family = binomial(link = 'logit'), data = temp_dask)
+  
+  b_dath = as.numeric(model_dath$coefficients[1])
+  m_dath = as.numeric(model_dath$coefficients[2])
+  i_dath = -b_dath/m_dath #-intercept/slope
+  dev_fit_dath = as.numeric(deviance(model_dath))
+  dath_x = data.frame('n_step' = i_dath)
+  value_dath_frame = data.frame(dath_x$n_step, predict(model_dath, list(n_step = dath_x$n_step), type = 'response'))
+  value_dath = value_dath_frame[[2]]
+  new2 = c(sub, "dath", temp_group, temp_age, temp_com_cond, m_dath, i_dath, value_dath, dev_fit_dath)
+  d_glm_fit_d[index, ] = new2
+  index = index + 1
+  
+  b_dash = as.numeric(model_dash$coefficients[1])
+  m_dash = as.numeric(model_dash$coefficients[2])
+  i_dash = -b_dash/m_dash
+  dev_fit_dash = as.numeric(deviance(model_dash))
+  value_dash_frame = data.frame(dath_x$n_step, predict(model_dash, list(n_step = dath_x$n_step), type = 'response'))
+  value_dash = value_dash_frame[[2]]
+  new1 = c(sub, "dash", temp_group, temp_age, temp_com_cond, m_dash, i_dash, value_dash, dev_fit_dash)
+  d_glm_fit_d[index, ] = new1
+  index = index + 1
+  
+  b_dask = as.numeric(model_dask$coefficients[1])
+  m_dask = as.numeric(model_dask$coefficients[2])
+  i_dask = -b_dask/m_dask
+  dev_fit_dask = as.numeric(deviance(model_dask))
+  value_dask_frame = data.frame(dath_x$n_step, predict(model_dask, list(n_step = dath_x$n_step), type = 'response'))
+  value_dask = value_dask_frame[[2]]
+  new3 = c(sub, "dask", temp_group, temp_age, temp_com_cond, m_dask, i_dask, value_dask, dev_fit_dask)
+  d_glm_fit_d[index, ] = new3
+}
+
+d_glm_fit_d$slope_coef = as.numeric(d_glm_fit_d$slope_coef)
+d_glm_fit_d$inflection_step = as.numeric(d_glm_fit_d$inflection_step)
+d_glm_fit_d$deviance = as.numeric(d_glm_fit_d$deviance)
+d_glm_fit_d$word<-as.factor(d_glm_fit_d$word)
+d_glm_fit_d$group<-as.factor(d_glm_fit_d$group)
+d_glm_fit_d$age<-as.factor(d_glm_fit_d$age)
+```
+###Combine D and G
+```{r, echo=FALSE}
+d_glm_fit$pair='G'
+d_glm_fit_d$pair='D'
+
+names(d_glm_fit)[names(d_glm_fit) == 'value_at_gith_i'] <- 'value_at_i'
+names(d_glm_fit_d)[names(d_glm_fit_d) == 'value_at_dath_i'] <- 'value_at_i'
+d_glm_fit<-rbind(d_glm_fit,d_glm_fit_d)
+d_glm_fit$word<-as.factor(d_glm_fit$word)
+d_glm_fit$pair<-as.factor(d_glm_fit$pair)
+
+```
+
+## Transform data and exclude outliers
+```{r,echo=FALSE}
+
+#Transform slope
+d_glm_fit$slope_coef_t<-as.numeric(-1*(d_glm_fit$slope_coef)) 
+d_glm_fit$slope_coef_t<-log(d_glm_fit$slope_coef_t)
+
+d_glm_fit<-d_glm_fit %>% filter(slope_coef_t > 0)#
+
+d_glm_fit$group<-as.factor(d_glm_fit$group)
+# Is deviance predicted by group/age?
+t.test(deviance ~ group, data = d_glm_fit)
+t.test(deviance ~ age, data = d_glm_fit)
+
+hist(d_glm_fit$slope_coef_t)
+
+```
+
+
+
+## Slope Analysis
+
+#### Slope across conditions
+```{r, echo=FALSE}
+
+# slope across conditions
+#d_glm_fit_n_gith=d_glm_fit%>%filter(word=="gift"|word=="giss")
+model_slope<-lm(slope_coef_t~group*age*pair*word, data=d_glm_fit)
+anova(model_slope)
+eta_sq(model_slope)
+
+lsmeans(model_slope, list(pairwise ~ group), adjust = "tukey")
+lsmeans(model_slope, list(pairwise ~ age), adjust = "tukey")
+lsmeans(model_slope, list(pairwise ~ pair), adjust = "tukey")
+```
+#### Try ANOVA-Type III
+```{r, echo=FALSE}
+##try Type III
+contrasts(d_glm_fit$age) <- contr.sum(2)
+contrasts(d_glm_fit$group) <- contr.sum(2)
+contrasts(d_glm_fit$word) <- contr.sum(6)
+contrasts(d_glm_fit$pair) <- contr.sum(2)
+
+#
+require(car)
+model_slope3 <- lm(slope_coef_t ~ group*age*pair*word,, data = d_glm_fit)
+Anova(model_slope3, type = "III")
+lsmeans(model_slope, list(pairwise ~ group), adjust = "tukey")
+
+```
+
+
+### Plot slope effects
+
+#### Plot Slope /G/ Effects
+
+```{r, echo=FALSE}
+d_glm_m_slope = d_glm_fit %>%
+  filter(pair=='G') %>%
+  dplyr::group_by(PartID, group,com_cond) %>%
+  dplyr::summarise(mean = mean(slope_coef_t, na.rm = T))
+
+multi.group <- 
+  d_glm_m_slope %>%
+  dabest(com_cond,mean, 
+         idx = list(c("Dys - Adult", "Typ - Adult")
+                    ,c("Dys - Child","Typ - Child")),
+         paired = FALSE
+  )
+plot(multi.group, color.column = group,rawplot.ylabel = "Slope")
+
+```
+
+#### Plot Slope /D/ Effects
+
+```{r, echo=FALSE}
+d_glm_m_slope = d_glm_fit %>%
+  filter(pair=='D') %>%
+  dplyr::group_by(PartID, group,com_cond) %>%
+  dplyr::summarise(mean = mean(slope_coef_t, na.rm = T))
+
+multi.group <- 
+  d_glm_m_slope %>%
+  dabest(com_cond,mean, 
+         idx = list(c("Dys - Adult", "Typ - Adult")
+                    ,c("Dys - Child","Typ - Child")),
+         paired = FALSE
+  )
+plot(multi.group, color.column = group,rawplot.ylabel = "Slope")
+
+```
+
+## Inflection
+```{r, ,echo=FALSE}
+#d_glm_fit$word_pair = paste(d_glm_fit$word, "-", d_glm_fit$pair)
+
+d_glm_fit_n_gith=d_glm_fit%>%filter(word!="gith" & word!="dath")
+#eta_sq(LME_model_i_nogith)
+m1<-lm(inflection_step~word*group*age*pair,data=d_glm_fit_n_gith)
+anova(m1)
+
+
+###Post hoc comparisons
+lsmeans(m1, list(pairwise ~ group|age), adjust = "tukey")
+
+```
+### Plot Inflection
+```{r, echo=FALSE}
+
+d_glm_m_inflection = d_glm_fit_n_gith %>%
+  dplyr::group_by(PartID, group,com_cond) %>%
+  dplyr::summarise(mean = mean(inflection_step, na.rm = T))
+
+multi.group <- 
+  d_glm_m_inflection %>%
+  dabest(com_cond,mean, 
+         idx = list(c("Dys - Adult", "Typ - Adult")
+                    ,c("Dys - Child","Typ - Child")),
+         paired = FALSE
+  )
+plot(multi.group, color.column = group,rawplot.ylabel = "Inflection")
+```
+
+
+## Lexical Effect
+
+```{r, echo=FALSE}
+########################## Get lexicality effect ##########################
+gift_pos = d_g %>% filter(word == 'gift') %>% 
+  dplyr::group_by(PartID, n_step, group, age) %>% 
+  dplyr::summarise(m_g = mean(phoneme_g, na.rm = T))
+giss_pos = d_g %>% filter(word == 'giss') %>% 
+  dplyr::group_by(PartID, n_step, group, age) %>% 
+  dplyr::summarise(m_g = mean(phoneme_g, na.rm = T))
+gith_pos = d_g %>% filter(word == 'gith') %>% 
+  dplyr::group_by(PartID, n_step, group, age)%>% 
+  dplyr::summarise(m_g = mean(phoneme_g, na.rm = T))
+
+lexical_g = data.frame(PartID = rep(0, 10), 
+                       step = rep(0, 10), 
+                       diff = rep(0, 10), 
+                       group = rep(0, 10), 
+                       age = rep(0, 10)) 
+row_index = 0
+for (sub in gift_pos$PartID) {
+  row_index = row_index + 1
+  current_diff = gift_pos$m_g[row_index] - giss_pos$m_g[row_index]
+  new = c(sub, gift_pos$n_step[row_index], 
+          current_diff, as.character(gift_pos$group[row_index]), 
+          as.character(gift_pos$age[row_index]))
+  lexical_g[row_index, ] = new
+}
+
+lexical_g$diff = as.numeric(lexical_g$diff)
+lexical_g_pos = lexical_g %>% 
+  dplyr::group_by(PartID, group, age) %>% 
+  dplyr::ungroup()%>%
+  dplyr::summarise(mean_diff = mean(diff, na.rm = TRUE))
+###lexicality by step
+lexical_model=(lmer(diff~step*group*age+(1|PartID),data=lexical_g, REML=FALSE))
+anova(lexical_model)
+eta_sq(lexical_model)
+lsmeans(lexical_model, list(pairwise ~ step|group|age), adjust = "tukey") #run only for gith
+```
+
+### Plot Lexicality Effect
+
+```{r, echo=FALSE}
+multi.two.group.unpaired_a <- 
+  lexical_g_pos %>%
+  filter(age=="Adult")%>%
+  dabest(group,mean_diff,
+         idx = list(c("Dys", "Typ")),
+         paired = FALSE
+  )
+a<-plot(multi.two.group.unpaired_a,
+        rawplot.ylim = c(-0.3, 1),
+        rawplot.ylabel = "Adult Lexical Effect",
+        effsize.ylabel = "Effect Size")
+
+
+multi.two.group.unpaired_c <- 
+  lexical_g_pos %>%
+  filter(age=="Child")%>%
+  dabest(group,mean_diff,
+         idx = list(c("Dys", "Typ")),
+         paired = FALSE
+  )
+c<-plot(multi.two.group.unpaired_c,
+        rawplot.ylim = c(-0.3, 1),
+        rawplot.ylabel = "Child Lexical Effect",
+        effsize.ylabel = "Effect Size")
+
+grid.arrange(a,c,ncol = 2)
+```
+
+###Plot lexicality effect by step/group
+
+```{r, echo=FALSE}
+# plot lexicality effects by step and by group
+
+lexical_g_total <- lexical_g %>%
+  group_by(step, group, age) %>%
+  dplyr::summarize(mean.diff = mean(diff, na.rm = TRUE),
+                   sd.diff = sd(diff, na.rm = TRUE),
+                   n.diff = n()) %>%
+  ungroup() %>%
+  mutate(se.diff = sd.diff / sqrt(n.diff),
+         lower.ci.diff = mean.diff - qt(1 - (0.05 / 2), n.diff - 1) * se.diff,
+         upper.ci.diff = mean.diff + qt(1 - (0.05 / 2), n.diff - 1) * se.diff) %>%
+  mutate_at(vars(step, group), as.factor)
+
+ggplot(data = lexical_g_total,
+       aes(x = step, y = mean.diff,  ymin = lower.ci.diff, ymax = upper.ci.diff,
+           group = group, fill = group)) +
+  geom_ribbon(alpha = 0.5) +
+  geom_point() +
+  geom_line() +
+  labs(x = 'Step', y = "Lexical Effect", title = element_blank()) +
+  theme_bw() +
+  theme(text = element_text(size = 18),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        #panel.background = element_rect(fill = 'white'),
+        legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5)) +
+  facet_wrap( ~ as.factor(age), nrow = 2)+theme(
+    strip.text = element_text(size=14),
+    legend.text = element_text(size=16),
+    legend.title = element_blank())
+```
+
+## Make logistic graphs
+```{r, echo=FALSE}
+d_g$age<-as.factor(d_g$age)
+ganong_models = read.csv("~/Dropbox (MIT)/Com_Dys_2016_data/final_for_sharing/final_code_JT/data/ganong_models.csv", header = T)
+raw_df_list = list()
+predict_df_list = list()
+
+for (i in c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)) {
+  temp_params = ganong_models[i,]
+  temp_pos = d_g %>% 
+    filter(word == as.character(temp_params[[1]]) & 
+             group == as.character(temp_params[[2]]) & 
+             age == as.character(temp_params[[3]])) %>% 
+    group_by(n_step) %>% 
+    summarise(m_g = mean(phoneme_g, na.rm = TRUE))
+  temp_model <- glm(m_g ~ n_step, family = binomial(link = 'logit'), 
+                    data = temp_pos)
+  new_x <- data.frame(n_step = seq(min(temp_pos$n_step), 
+                                   max(temp_pos$n_step), len = 100))
+  temp_data = data.frame(new_x$n_step, predict(temp_model, list(n_step = new_x$n_step), type = 'response'))
+  names(temp_data) = c("n_step", "value")
+  temp_data$word = temp_params[[1]]
+  temp_data$group = temp_params[[2]]
+  temp_data$age = temp_params[[3]]
+  names(temp_pos) = c("n_step", "value")
+  temp_pos$word = temp_params[[1]]
+  temp_pos$group = temp_params[[2]]
+  temp_pos$age = temp_params[[3]]
+  
+  temp_pos$interact = interaction(temp_pos$word, temp_pos$group, temp_pos$age)
+  temp_data$interact = interaction(temp_data$word, temp_data$group, temp_data$age)
+  
+  raw_df_list[[i]] <- temp_pos
+  predict_df_list[[i]] <- temp_data
+}
+
+raw_df = do.call("rbind", raw_df_list)
+predict_df = do.call("rbind", predict_df_list)
+
+# make four plots
+plot1 = ggplot() +
+  geom_line(data = predict_df[1:300,], aes(x = n_step, y = value, group = word, color = word), size = 1.05) +
+  scale_color_manual(values = c('darkorange', 'purple', 'forestgreen')) +
+  geom_line(y = 0.5, color = 'black') +
+  geom_line(data = data.frame(raw_df_list[1]), aes(x = n_step, y = value), linetype = "dotted", color = 'darkorange', size = 1) +
+  geom_line(data = data.frame(raw_df_list[2]), aes(x = n_step, y = value), linetype = "dotted", color = 'forestgreen', size = 1) +
+  geom_line(data = data.frame(raw_df_list[3]), aes(x = n_step, y = value), linetype = "dotted", color = 'purple', size = 1) +
+  geom_point(data = data.frame(raw_df_list[1]), aes(x = n_step, y = value), color = 'darkorange', size = 1.5, shape = 1) +
+  geom_point(data = data.frame(raw_df_list[2]), aes(x = n_step, y = value), color = 'forestgreen', size = 1.5, shape = 1) +
+  geom_point(data = data.frame(raw_df_list[3]), aes(x = n_step, y = value), color = 'purple', size = 1.5, shape = 1) +
+  scale_y_continuous(limits = c(0, 1.0)) +
+  scale_x_continuous(breaks = c(1, 2, 3, 4, 5, 6, 7)) +
+  labs(x = 'Step', y = "Proportion /g/ Response", title = "Dys Adult") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = 'white'),
+        legend.position = "none")
+
+plot2 = ggplot() +
+  geom_line(data = predict_df[301:600,], aes(x = n_step, y = value, group = word, color = word), size = 1.05) +
+  scale_color_manual(values = c('darkorange', 'purple', 'forestgreen')) +
+  geom_line(y = 0.5, color = 'black') +
+  geom_line(data = data.frame(raw_df_list[4]), aes(x = n_step, y = value), linetype = "dotted", color = 'darkorange', size = 1) +
+  geom_line(data = data.frame(raw_df_list[5]), aes(x = n_step, y = value), linetype = "dotted", color = 'forestgreen', size = 1) +
+  geom_line(data = data.frame(raw_df_list[6]), aes(x = n_step, y = value), linetype = "dotted", color = 'purple', size = 1) +
+  geom_point(data = data.frame(raw_df_list[4]), aes(x = n_step, y = value), color = 'darkorange', size = 1.5, shape = 1) +
+  geom_point(data = data.frame(raw_df_list[5]), aes(x = n_step, y = value), color = 'forestgreen', size = 1.5, shape = 1) +
+  geom_point(data = data.frame(raw_df_list[6]), aes(x = n_step, y = value), color = 'purple', size = 1.5, shape = 1) +
+  scale_y_continuous(limits = c(0, 1.0)) +
+  scale_x_continuous(breaks = c(1, 2, 3, 4, 5, 6, 7)) +
+  labs(x = 'Step', y = "Proportion /g/ Response", title = "Dys Child") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = 'white'),
+        legend.position = "none")
+
+plot3 = ggplot() +
+  geom_line(data = predict_df[601:900,], aes(x = n_step, y = value, group = word, color = word), size = 1.05) +
+  scale_color_manual(values = c('darkorange', 'purple', 'forestgreen')) +
+  geom_line(y = 0.5, color = 'black') +
+  geom_line(data = data.frame(raw_df_list[7]), aes(x = n_step, y = value), linetype = "dotted", color = 'darkorange', size = 1) +
+  geom_line(data = data.frame(raw_df_list[8]), aes(x = n_step, y = value), linetype = "dotted", color = 'forestgreen', size = 1) +
+  geom_line(data = data.frame(raw_df_list[9]), aes(x = n_step, y = value), linetype = "dotted", color = 'purple', size = 1) +
+  geom_point(data = data.frame(raw_df_list[7]), aes(x = n_step, y = value), color = '#F8766D', size = 1.5, shape = 1) +
+  geom_point(data = data.frame(raw_df_list[8]), aes(x = n_step, y = value), color = '#619CFF', size = 1.5, shape = 1) +
+  geom_point(data = data.frame(raw_df_list[9]), aes(x = n_step, y = value), color = '#00BA38', size = 1.5, shape = 1) +
+  scale_y_continuous(limits = c(0, 1.0)) +
+  scale_x_continuous(breaks = c(1, 2, 3, 4, 5, 6, 7)) +
+  labs(x = 'Step', y = "Proportion /g/ Response", title = "Typ Adult") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = 'white'),
+        legend.position ="none")
+
+plot4 = ggplot() +
+  geom_line(data = predict_df[901:1200,], aes(x = n_step, y = value, group = word, color = word), size = 1.05) +
+  scale_color_manual(values = c('darkorange', 'purple', 'forestgreen')) +
+  geom_line(y = 0.5, color = 'black') +
+  geom_line(data = data.frame(raw_df_list[10]), aes(x = n_step, y = value), linetype = "dotted", color = 'darkorange', size = 1) +
+  geom_line(data = data.frame(raw_df_list[11]), aes(x = n_step, y = value), linetype = "dotted", color = 'forestgreen', size = 1) +
+  geom_line(data = data.frame(raw_df_list[12]), aes(x = n_step, y = value), linetype = "dotted", color = 'purple', size = 1) +
+  geom_point(data = data.frame(raw_df_list[10]), aes(x = n_step, y = value), color = 'darkorange', size = 1.5, shape = 1) +
+  geom_point(data = data.frame(raw_df_list[11]), aes(x = n_step, y = value), color = 'forestgreen', size = 1.5, shape = 1) +
+  geom_point(data = data.frame(raw_df_list[12]), aes(x = n_step, y = value), color = 'purple', size = 1.5, shape = 1) +
+  scale_y_continuous(limits = c(0, 1.0)) +
+  scale_x_continuous(breaks = c(1, 2, 3, 4, 5, 6, 7)) +
+  labs(x = 'Step', y = "Proportion /g/ Response", title = "Typ Child") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = 'white'),
+        legend.position = 'none')
+
+ggarrange(plot1, plot2, plot3, plot4, ncol=2, nrow=2, common.legend = TRUE, legend="bottom")
+
+```
+

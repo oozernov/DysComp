@@ -34,7 +34,7 @@ d_c %<>%
                                                                 nchar(response)),
                                    1, 0),
                             correct)) %>%
-    select(-pres, -word1, -word2, -pres1, -condition1)
+    dplyr::select(-pres, -word1, -word2, -pres1, -condition1)
 
 # remove bad items (based on adult mturk data)
 bad_items <- c('brown-crown', 'drill-grill', 'pear-bear', 'pole-goal')
@@ -55,7 +55,7 @@ d_a <- read_csv("data/phonresto_data_a_010719.csv")
 groups_a <- read_csv("data/adult_groups_012418.csv")
 
 key <- read_csv("data/phonresto_key.csv") %>%
-    select(soundfile, correct)
+    dplyr::select(soundfile, correct)
 
 d_a %<>%
     # add group columns to the dataframe
@@ -63,18 +63,19 @@ d_a %<>%
     # make columns to distinguish condition and word set (i.e. bag-tag)
     separate(cond, into = c("condition", "pres"), sep = "-", remove = FALSE) %>%
     separate(soundfile, into = c("word", "condition1", "pres1"), sep = "-", remove = FALSE) %>%
-    mutate(item = paste(word, condition1, sep = "-")) %>%
+    dplyr::mutate(item = paste(word, condition1, sep = "-")) %>%
     # get rid of columns we don't need
     dplyr::select(-pres, -word, -pres1, -condition1, -X1) %>%
     # add correct column
-    left_join(key, by = "soundfile") %>%
-    mutate(is_correct = ifelse(response == 'correct', 1, 0))
+    dplyr::left_join(key, by = "soundfile") %>%
+    dplyr::mutate(is_correct = ifelse(response == 'correct', 1, 0))
 
 # adult sample size
 counts <- d_a %>%
     group_by(Subject) %>%
     summarize(m = mean(keyRT)) %>%
-    left_join(groups_a, by = "Subject")
+    left_join(groups_a, by = "Subject")%>%
+    filter(group=="Dys"|group=="Typ")
 count(counts, group)
 
 #### Overall Accuracy ####
@@ -88,24 +89,28 @@ d_prime_c$cr <- ifelse(d_prime_c$condition == 'i' & d_prime_c$correct == 1, 1, 0
 # Calculate d-prime
 # Child
 d_prime_c %<>%
-    group_by(PartID) %>%
-    summarize(hit = sum(hit, na.rm = TRUE),
+    dplyr:::group_by(PartID) %>%
+    dplyr::summarize(hit = sum(hit, na.rm = TRUE),
               fa = sum(fa, na.rm = TRUE),
               miss = sum(miss, na.rm = TRUE),
-              cr = sum(cr, na.rm = TRUE)) %>%
-    filter_at(vars(hit, fa, miss, cr), any_vars(. != 0)) %>%
-    na.omit()
+              cr = sum(cr, na.rm = TRUE)) 
 
-indices_c <- neuropsychology::dprime(d_prime_c$hit, d_prime_c$miss, d_prime_c$fa, d_prime_c$cr)
+d_prime_c<-na.omit(d_prime_c)
+
+indices_c <- psycho::dprime(
+    n_hit=d_prime_c$hit, 
+    n_fa=d_prime_c$fa, 
+    n_miss=d_prime_c$miss, 
+    n_cr=d_prime_c$cr)
 d_prime_c$d <- indices_c$dprime
 
-d_prime_c_all <- left_join(d_prime_c, select(d_c, PartID, condition), by = "PartID") %>%
-    left_join(groups_c, by = "PartID") %>%
-    mutate(group = ifelse(DD == 1, "Dys", "Typ")) %>%
+d_prime_c_all <- left_join(d_prime_c, dplyr::select(d_c, PartID, condition), by = "PartID") %>%
+    dplyr::left_join(groups_c, by = "PartID") %>%
+    dplyr::mutate(group = ifelse(DD == 1, "Dys", "Typ")) %>%
     group_by(PartID, group) %>%
-    summarize(d = mean(d)) %>%
-    ungroup() %>%
-    mutate(group = as.factor(group))
+    dplyr::summarize(d = mean(d)) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(group = as.factor(group))
 
 #### Child Analysis ####
 # test for normal distribution
@@ -135,13 +140,12 @@ d_prime_a %<>%
     summarize(hit = sum(hit, na.rm = TRUE),
               fa = sum(fa, na.rm = TRUE),
               miss = sum(miss, na.rm = TRUE),
-              cr = sum(cr, na.rm = TRUE)) %>%
-    filter_at(vars(hit, fa, miss, cr), any_vars(. != 0)) %>%
-    na.omit()
-indices_a <- neuropsychology::dprime(d_prime_a$hit, d_prime_a$miss, d_prime_a$fa, d_prime_a$cr)
+              cr = sum(cr, na.rm = TRUE)) 
+d_prime_a<-na.omit(d_prime_a)
+indices_a <- psycho::dprime(d_prime_a$hit, d_prime_a$miss, d_prime_a$fa, d_prime_a$cr)
 d_prime_a$d <- indices_a$dprime
 
-d_prime_a_all <- left_join(d_prime_a, select(d_a, Subject, condition), by = "Subject") %>%
+d_prime_a_all <- left_join(d_prime_a, dplyr::select(d_a, Subject, condition), by = "Subject") %>%
     left_join(groups_a, by = "Subject") %>%
     group_by(Subject, group) %>%
     summarize(d = mean(d))
@@ -194,27 +198,21 @@ d_a2$condition <- ifelse(d_a2$condition=="cc","Cong","Incong")
 d_a2$group_cond<-paste(d_a2$group, "-", d_a2$condition)
 
 ##Adult
-m1<-lmerTest::lmer(mean.rti~condition*group+(1|Subject), data=d_a2,REML=TRUE)
+m1<-lm(mean.rti~condition*group, data=d_a2)
 anova(m1)
 lsmeans(m1, list(pairwise ~ group), adjust = "tukey")
 lsmeans(m1, list(pairwise ~ condition), adjust = "tukey") 
-eta_sq(m1)
-##Child
+effectsize::eta_squared(m1)
 
+##Child
 d_c$DD<-as.factor(d_c$DD)
 d_c$condition<-as.factor(d_c$condition)
-m2<-lmer(mean.rti~condition*group+(1|PartID), data=d_c2,REML=TRUE)
+m2<-lm(mean.rti~condition*group, data=d_c2)
 anova(m2)
-lsmeans(m2, list(pairwise ~ DD), adjust = "tukey")
+lsmeans(m2, list(pairwise ~ group), adjust = "tukey")
 lsmeans(m2, list(pairwise ~ condition), adjust = "tukey") #highest RT in Cong, Lowest in N
-eta_sq(m1)
-d_c2<-d_c%>%filter(condition!='n')
+effectsize::eta_squared(m1)
 
-m3<-lmer(keyRT~condition*DD+(1|PartID), data=d_c,REML=TRUE)
-anova(m3)
-eta_sq(m3)
-
-lsmeans(m3, list(pairwise ~ condition), adjust = "tukey") #highest RT in Cong, Lowest in N
 
 ##Plot  combined effects by rti
 
@@ -230,8 +228,11 @@ p_c <-
                       c("Typ - Incong", "Dys - Incong")),
            paired = FALSE
     )
+
+p_c <- dabestr::cohens_d(p_c)
+
 p1<-plot(p_c,
-       #  rawplot.ylim = c(3, 7),
+        rawplot.ylim = c(3, 7),
          rawplot.ylabel = "Child RT",color.column = group,
          effsize.ylabel = "Effect")
 
@@ -244,12 +245,20 @@ p_a <-
                       c("Typ - Incong", "Dys - Incong")),
            paired = FALSE
     )
+
+p_a <- dabestr::cohens_d(p_a)
+
 p2<-plot(p_a,
-       #  rawplot.ylim = c(3, 7),
+       rawplot.ylim = c(3, 7),
          rawplot.ylabel = "Adult RT",color.column = group,
          effsize.ylabel = "Effect")
         effsize.ylim= c(0,0.4)
+        
+    
 grid.arrange(p1,p2,nrow = 2)
+
+
+
 
 #rti
 
@@ -308,9 +317,8 @@ d_c_final <- left_join(comp_c_all, groups_c, by = "PartID")
 
 #### Analysis ####
 shapiro.test(d_c_final$phonresto_congruent_minus_incongruent) # test for normal distribution
-LME_model1 <- lmer(dprime ~ condition*group + (1|PartID), data = d_c_combined_hitfa, REML = FALSE)
-summary(LME_model1)
-anova(LME_model1)
+lm1 <- lm(dprime ~ condition*group, data = d_c_combined_hitfa)
+anova(lm1)
 lsmeans(LME_model1, list(pairwise ~ condition), adjust = "tukey")
 
 #### Adult ####
@@ -340,6 +348,9 @@ d_a_all %<>%
     mutate(condition = ifelse(condition == "cc", "Congruent", "Incongruent"))
 
 d_a_combined_hitfa <- d_a_all
+
+lm2 <- lm(dprime ~ condition*group, data = d_a_combined_hitfa)
+anova(lm2)
 
 
 # create a dataframe with all dprime info to export

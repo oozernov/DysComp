@@ -68,9 +68,9 @@ groups = bind_rows(groups_a, groups_c)
 d_all<-read.csv("phonword_all_102020.csv")
 
 # make new columns that will let us separate by continuum
-new_columns = colsplit(d$soundfile, "-", names=c("word", "rest"))
+new_columns = reshape2::colsplit(d$soundfile, "-", names=c("word", "rest"))
 d = cbind(d, new_columns)
-new_columns = colsplit(d$rest, "", names=c("n_step","w", "x", "y", "z"))
+new_columns = reshape2::colsplit(d$rest, "", names=c("n_step","w", "x", "y", "z"))
 d = cbind(d, new_columns)
 d=d%>%filter(!(PartID %in% c('READ_6103','5028'))) #READ_6103-below chance, READ_5028-partial trials
 
@@ -160,9 +160,9 @@ unique(data_tmp4check[data_tmp4check$n_step != 21,])
 View(data_tmp4check)
 length(unique(d$PartID))
 
-data_tmp4check <- aggregate(trialNum ~ PartID * com_cond , max, data = d )
-data_tmp4check <- aggregate(trialNum ~ PartID * com_cond * , FUN=NROW, data = d )
-data_tmp4check <- aggregate(trialNum ~ PartID * com_cond * word_category, FUN=NROW, data = d )
+data_tmp4check <- aggregate(trialNum ~ PartID * com_cond ,max, data = d )
+data_tmp4check <- aggregate(trialNum ~ PartID * com_cond,FUN=NROW,data = d )
+data_tmp4check <- aggregate(trialNum ~ PartID * com_cond * word, FUN=NROW, data = d )
 
 data_tmp4check[data_tmp4check$trialNum !=126,1]
 View(d[d$PartID == 'READ_6103',])
@@ -209,7 +209,7 @@ for (sub in d_export$PartID) {
   model_giss <- glm(phoneme_g ~ n_step, family = binomial(link = 'logit'), data = temp_giss)
   
   b_gith = as.numeric(model_gith$coefficients[1])
-  m_gith = as.numeric(model_gith$coefficients[2])
+  m_gith = as.numeric(model_gith$coefficients[2]) 
   i_gith = -b_gith/m_gith #-intercept/slope
   dev_fit_gith = as.numeric(deviance(model_gith))
   gith_x = data.frame('n_step' = i_gith)
@@ -220,8 +220,8 @@ for (sub in d_export$PartID) {
   index = index + 1
   
   b_gift = as.numeric(model_gift$coefficients[1])
-  m_gift = as.numeric(model_gift$coefficients[2])
-  i_gift = -b_gift/m_gift
+  m_gift = as.numeric(model_gift$coefficients[2]) #slope
+  i_gift = -b_gift/m_gift  #inflection
   dev_fit_gift = as.numeric(deviance(model_gift))
   value_gift_frame = data.frame(gith_x$n_step, predict(model_gift, list(n_step = gith_x$n_step), type = 'response'))
   value_gift = value_gift_frame[[2]]
@@ -230,8 +230,8 @@ for (sub in d_export$PartID) {
   index = index + 1
   
   b_giss = as.numeric(model_giss$coefficients[1])
-  m_giss = as.numeric(model_giss$coefficients[2])
-  i_giss = -b_giss/m_giss
+  m_giss = as.numeric(model_giss$coefficients[2]) #slope
+  i_giss = -b_giss/m_giss #inflection
   dev_fit_giss = as.numeric(deviance(model_giss))
   value_giss_frame = data.frame(gith_x$n_step, predict(model_giss, list(n_step = gith_x$n_step), type = 'response'))
   value_giss = value_giss_frame[[2]]
@@ -247,6 +247,8 @@ d_glm_fit$group<-as.factor(d_glm_fit$group)
 d_glm_fit$age<-as.factor(d_glm_fit$age)
 
 ```
+
+## Fit Logistic Regression D
 
 ```{r, include=FALSE, echo=FALSE}
 
@@ -343,15 +345,15 @@ d_glm_fit$pair<-as.factor(d_glm_fit$pair)
 #Transform slope
 d_glm_fit$slope_coef_t<-as.numeric(-1*(d_glm_fit$slope_coef)) 
 d_glm_fit$slope_coef_t<-log(d_glm_fit$slope_coef_t)
-
-d_glm_fit<-d_glm_fit %>% filter(slope_coef_t > 0)#
+hist(d_glm_fit$slope_coef_t)
+d_glm_fit<-d_glm_fit %>% filter(slope_coef_t > 0) #exclude participants who had the opposite pattern of performance (slopes>0 for non-transormed slopes)
+hist(d_glm_fit$slope_coef_t)
 
 d_glm_fit$group<-as.factor(d_glm_fit$group)
 # Is deviance predicted by group/age?
 t.test(deviance ~ group, data = d_glm_fit)
 t.test(deviance ~ age, data = d_glm_fit)
 
-hist(d_glm_fit$slope_coef_t)
 
 ```
 
@@ -360,6 +362,8 @@ hist(d_glm_fit$slope_coef_t)
 ## Slope Analysis
 
 #### Slope across conditions
+
+- Main effect for group with larger slope in Typ as compared to Dys across ages and word pairs
 ```{r, echo=FALSE}
 
 # slope across conditions
@@ -368,29 +372,49 @@ model_slope<-lm(slope_coef_t~group*age*pair*word, data=d_glm_fit)
 anova(model_slope)
 eta_sq(model_slope)
 
+#posthoc
 lsmeans(model_slope, list(pairwise ~ group), adjust = "tukey")
 lsmeans(model_slope, list(pairwise ~ age), adjust = "tukey")
 lsmeans(model_slope, list(pairwise ~ pair), adjust = "tukey")
 ```
 #### Try ANOVA-Type III
 ```{r, echo=FALSE}
-##try Type III
-contrasts(d_glm_fit$age) <- contr.sum(2)
-contrasts(d_glm_fit$group) <- contr.sum(2)
-contrasts(d_glm_fit$word) <- contr.sum(6)
-contrasts(d_glm_fit$pair) <- contr.sum(2)
-
-#
-require(car)
-model_slope3 <- lm(slope_coef_t ~ group*age*pair*word,, data = d_glm_fit)
-Anova(model_slope3, type = "III")
-lsmeans(model_slope, list(pairwise ~ group), adjust = "tukey")
+# ##try Type III
+# contrasts(d_glm_fit$age) <- contr.sum(2)
+# contrasts(d_glm_fit$group) <- contr.sum(2)
+# contrasts(d_glm_fit$word) <- contr.sum(6)
+# contrasts(d_glm_fit$pair) <- contr.sum(2)
+# 
+# #
+# require(car)
+# model_slope3 <- lm(slope_coef_t ~ group*age*pair*word,, data = d_glm_fit)
+# Anova(model_slope3, type = "III") #model is signular
+# lsmeans(model_slope, list(pairwise ~ group), adjust = "tukey")
 
 ```
 
 
 ### Plot slope effects
+#### Plot Slope all effects for Neurtral
+#decide which one to display..
+```{r, echo=FALSE}
+d_glm_m_slope = d_glm_fit %>%
+    filter(word=='gith'|word=='dath') %>%
+  dplyr::group_by(PartID, group,com_cond) %>%
+  dplyr::summarise(mean = mean(slope_coef_t, na.rm = T))
 
+multi.group <- 
+  d_glm_m_slope %>%
+  dabest(com_cond,mean, 
+         idx = list(c("Dys - Adult", "Typ - Adult")
+                    ,c("Dys - Child","Typ - Child")),
+         paired = FALSE
+  )
+
+two.group.unpaired.meandiff<- dabestr::cohens_d(multi.group)
+
+plot(two.group.unpaired.meandiff, color.column = group,rawplot.ylabel = "Slope")
+```
 #### Plot Slope /G/ Effects
 
 ```{r, echo=FALSE}
@@ -406,7 +430,10 @@ multi.group <-
                     ,c("Dys - Child","Typ - Child")),
          paired = FALSE
   )
-plot(multi.group, color.column = group,rawplot.ylabel = "Slope")
+
+two.group.unpaired.meandiff_g <- dabestr::cohens_d(multi.group)
+
+plot(two.group.unpaired.meandiff_g, color.column = group,rawplot.ylabel = "Slope")
 
 ```
 
@@ -425,11 +452,17 @@ multi.group <-
                     ,c("Dys - Child","Typ - Child")),
          paired = FALSE
   )
-plot(multi.group, color.column = group,rawplot.ylabel = "Slope")
+
+two.group.unpaired.meandiff_d <- dabestr::cohens_d(multi.group)
+
+plot(two.group.unpaired.meandiff_d, color.column = group,rawplot.ylabel = "Slope")
 
 ```
 
 ## Inflection
+
+- There is a larger effect for inflection in Dys Adults as compared to Typ adults
+- No inflection differences in children
 ```{r, ,echo=FALSE}
 #d_glm_fit$word_pair = paste(d_glm_fit$word, "-", d_glm_fit$pair)
 
@@ -440,7 +473,7 @@ anova(m1)
 
 
 ###Post hoc comparisons
-lsmeans(m1, list(pairwise ~ group|age), adjust = "tukey")
+lsmeans(m1, list(pairwise ~ group|age), adjust = "tukey") 
 
 ```
 ### Plot Inflection
@@ -457,7 +490,9 @@ multi.group <-
                     ,c("Dys - Child","Typ - Child")),
          paired = FALSE
   )
-plot(multi.group, color.column = group,rawplot.ylabel = "Inflection")
+
+two.group.unpaired.meandiff_infl <- dabestr::cohens_d(multi.group)
+plot(two.group.unpaired.meandiff_infl, color.column = group,rawplot.ylabel = "Inflection")
 ```
 
 
@@ -493,13 +528,14 @@ for (sub in gift_pos$PartID) {
 lexical_g$diff = as.numeric(lexical_g$diff)
 lexical_g_pos = lexical_g %>% 
   dplyr::group_by(PartID, group, age) %>% 
-  dplyr::ungroup()%>%
-  dplyr::summarise(mean_diff = mean(diff, na.rm = TRUE))
+  dplyr::summarise(mean_diff = mean(diff, na.rm = TRUE))%>% 
+dplyr::ungroup()
+
 ###lexicality by step
 lexical_model=(lmer(diff~step*group*age+(1|PartID),data=lexical_g, REML=FALSE))
 anova(lexical_model)
 eta_sq(lexical_model)
-lsmeans(lexical_model, list(pairwise ~ step|group|age), adjust = "tukey") #run only for gith
+lsmeans(lexical_model, list(pairwise ~ group|age|step), adjust = "tukey") #run only for gith
 ```
 
 ### Plot Lexicality Effect
@@ -507,11 +543,14 @@ lsmeans(lexical_model, list(pairwise ~ step|group|age), adjust = "tukey") #run o
 ```{r, echo=FALSE}
 multi.two.group.unpaired_a <- 
   lexical_g_pos %>%
-  filter(age=="Adult")%>%
+  dplyr::filter(age=="Adult")%>%
   dabest(group,mean_diff,
          idx = list(c("Dys", "Typ")),
          paired = FALSE
   )
+
+multi.two.group.unpaired_a <- dabestr::cohens_d(multi.two.group.unpaired_a)
+
 a<-plot(multi.two.group.unpaired_a,
         rawplot.ylim = c(-0.3, 1),
         rawplot.ylabel = "Adult Lexical Effect",
@@ -525,6 +564,9 @@ multi.two.group.unpaired_c <-
          idx = list(c("Dys", "Typ")),
          paired = FALSE
   )
+
+multi.two.group.unpaired_c <- dabestr::cohens_d(multi.two.group.unpaired_c)
+
 c<-plot(multi.two.group.unpaired_c,
         rawplot.ylim = c(-0.3, 1),
         rawplot.ylabel = "Child Lexical Effect",
@@ -543,7 +585,7 @@ lexical_g_total <- lexical_g %>%
   dplyr::summarize(mean.diff = mean(diff, na.rm = TRUE),
                    sd.diff = sd(diff, na.rm = TRUE),
                    n.diff = n()) %>%
-  ungroup() %>%
+ 
   mutate(se.diff = sd.diff / sqrt(n.diff),
          lower.ci.diff = mean.diff - qt(1 - (0.05 / 2), n.diff - 1) * se.diff,
          upper.ci.diff = mean.diff + qt(1 - (0.05 / 2), n.diff - 1) * se.diff) %>%

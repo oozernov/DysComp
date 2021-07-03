@@ -343,11 +343,17 @@ d_glm_fit$pair<-as.factor(d_glm_fit$pair)
 ```{r,echo=FALSE}
 
 #Transform slope
-d_glm_fit$slope_coef_t<-as.numeric(-1*(d_glm_fit$slope_coef)) 
+d_glm_fit$slope_coef_t<-as.numeric(-1*(d_glm_fit$slope_coef))
+
+exclude<-d_glm_fit %>%filter(slope_coef_t < 0 |slope_coef_t == 0 )
+exclude2 = exclude %>% dplyr::group_by(PartID, group,age,word) %>%
+  dplyr::summarise(m = mean(slope_coef_t))
+table(exclude2$group,exclude2$word) #subjects to exclude per word
+table(exclude2$group,exclude2$age) #subjects to exclude per word
+
 d_glm_fit$slope_coef_t<-log(d_glm_fit$slope_coef_t)
 hist(d_glm_fit$slope_coef_t)
-d_glm_fit<-d_glm_fit %>% filter(slope_coef_t > 0) #exclude participants who had the opposite pattern of performance (slopes>0 for non-transormed slopes)
-hist(d_glm_fit$slope_coef_t)
+
 
 d_glm_fit$group<-as.factor(d_glm_fit$group)
 # Is deviance predicted by group/age?
@@ -731,3 +737,16 @@ ggarrange(plot1, plot2, plot3, plot4, ncol=2, nrow=2, common.legend = TRUE, lege
 
 ```
 
+```{R}
+d_ends<-d%>%filter(word=='dath'|word=='gith')%>%
+  filter(n_step==1|n_step==7)
+
+d_ends$correct<-base::ifelse(d_ends$n_step==1 & d_ends$word=='dath' & d_ends$response=="D",1,
+                         ifelse(d_ends$n_step=='7' & d_ends$word=='dath' & d_ends$response=='T',1,
+                                ifelse(d_ends$n_step=='1' & d_ends$word=='gith' & d_ends$response=='G',1,
+                                       ifelse(d_ends$n_step =='7' & d_ends$word=='gith' & d_ends$response =='K',1,0))))
+
+d_ends_exclude<-d_ends%>%group_by(PartID,group,word)%>%
+  dplyr::summarise(per_correct = (sum(correct, na.rm = T)*100/6))%>%
+  filter(per_correct<100)
+```

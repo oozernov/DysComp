@@ -91,7 +91,29 @@ y_ticks = c(0,10,20,30,40,50,60,70,80,90,100)
 y_new_ticks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
 ```
 
-# Inspect and Analyze
+# FINAL DATASET w/ MATLAB FITTING
+
+ALL_data_fitted = data.frame(read.csv('~/Dropbox (MIT)/GitHub/DysComp/SJ/allDATA_matlab_logistic_fit_wBounds_flip_FINAL.csv', header =T));
+GK_data_fitted$phonemeContr <- rep_len("gk", dim(GK_data_fitted)[1])
+DT_data_fitted$phonemeContr <- rep_len("dt", dim(DT_data_fitted)[1])
+ALL_data_fitted$phonemeContr <- ifelse(ALL_data_fitted$isGK == 1, "gk","dt")
+ALL_data_fitted$word <- ifelse(ALL_data_fitted$wordPairType == 1 & ALL_data_fitted$isGK == 1, "gift", 
+                                ifelse(ALL_data_fitted$wordPairType == 2 & ALL_data_fitted$isGK == 1, "giss",
+                                    ifelse(ALL_data_fitted$wordPairType == 3 & ALL_data_fitted$isGK == 1, "gith",
+                        ifelse(ALL_data_fitted$wordPairType == 1 & ALL_data_fitted$isGK == 0, "dash", 
+                                ifelse(ALL_data_fitted$wordPairType == 2 & ALL_data_fitted$isGK == 0, "dask",
+                                    "dath")))))
+
+# log slope
+ALL_data_fitted$log_slope <- log(ALL_data_fitted$slope)
+ALL_data_fitted$log_slope <- ifelse(ALL_data_fitted$slope<=0, NA, ALL_data_fitted$log_slope)
+
+
+##### ADD NAMING FOR FIGURES GGPLOT BARS 
+ALL_data_fitted$group_adults <- ifelse(ALL_data_fitted$isAdult == 1, "Adult","Child") 
+ALL_data_fitted$group_dys <- ifelse(ALL_data_fitted$isDys == 1, "Dys","Typ") 
+ALL_data_fitted$groupName_comb <- paste(ALL_data_fitted$group_adults,
+                                        ALL_data_fitted$group_dys,sep = "-")
 
 ##Look at raw data
 ### G Pairs
@@ -140,113 +162,126 @@ ggplot(d_conts_d, aes(colour=word_pair, y=percent_d*100, x=n_step)) +
         plot.title = element_text(hjust = 0.5)) +
   facet_wrap(~com_cond, ncol = 2)
 ```
-### Check num of trials
-```{r, include=FALSE, echo=FALSE}
-####check for number of trials####
-require(data.table)
-d_test = d %>% dplyr::group_by(PartID) %>%
-  dplyr::summarise(test = uniqueN(trialNum, na.rm = T))
-range(d_test$test)
 
-d_export = d_g %>% filter(word == 'gith') %>% 
-  dplyr::group_by(PartID, n_step, group, age) %>% 
-  dplyr::summarise(m_g = mean(phoneme_g, na.rm = T))
-d_export = distinct(data.frame(d_export[, c("PartID")]))
-names(d_export)=c("PartID")
+```{r ALL DATA COMBINED -- FOR FINAL REPORTING}
 
-# Check # of trials per each subject / word 
-data_tmp4check <- aggregate(n_step ~ PartID * word * com_cond , FUN=NROW, data = d )
-unique(data_tmp4check[data_tmp4check$n_step != 21,])
-#View(data_tmp4check)
-length(unique(d$PartID))
-
-data_tmp4check <- aggregate(trialNum ~ PartID * com_cond ,max, data = d )
-data_tmp4check <- aggregate(trialNum ~ PartID * com_cond,FUN=NROW,data = d )
-data_tmp4check <- aggregate(trialNum ~ PartID * com_cond * word, FUN=NROW, data = d )
-
-data_tmp4check[data_tmp4check$trialNum !=126,1]
-#View(d[d$PartID == 'READ_6103',])
-```
+all_data_fitted <- ALL_data_fitted
+# (or) Make ALL DATA COMBINED GK & DT 
+# all_data_fitted <- rbind(GK_data_fitted, DT_data_fitted) 
 
 
-### Sample Size
-```{r, echo=FALSE}
-counts = d %>% dplyr::group_by(PartID, age) %>%
-  dplyr::summarise(m = mean(n_step))
-counts = merge(counts, groups, by = "PartID")
-dplyr::count(counts, age, group)
-```
-## Fit Logistic Regression G
+################################
+###### ALL DATA COMBINED  ###### 
+################################
 
-```{r, include=FALSE, echo=FALSE}
-calc_g = d_g %>%
-  dplyr::group_by(PartID, word, n_step, group, age, com_cond) 
-  #dplyr::summarise(prop_g = mean(phoneme_g, na.rm = T))
+# 1. exclude subject with 0 slope (and the corresponding inflection pt) in any word types
+subj_outliers = unique(all_data_fitted$subj_id[all_data_fitted$slope <= 0])
+length(subj_outliers)
 
-d_glm_fit = data.frame(PartID = rep(0, 10), 
-                       word = rep(0, 10), 
-                       group = rep(0, 10), 
-                       age = rep(0, 10), 
-                       com_cond = rep(0, 10),
-                       slope_coef = rep(0, 10), 
-                       inflection_step = rep(0, 10), 
-                       value_at_gith_i = rep(0, 10), 
-                       deviance = rep(0, 10))
-index = 0
-for (sub in d_export$PartID) { 
-  index = index + 1
-  temp = calc_g %>% filter(PartID == sub)
-  temp_gift = temp %>% filter(word == "gift")
-  temp_gith = temp %>% filter(word == "gith")
-  temp_giss = temp %>% filter(word == "giss")
-  
-  temp_group = as.character(temp$group[1])
-  temp_age = as.character(temp$age[1])
-  temp_com_cond = as.character(temp$com_cond[1])
-  
-  model_gift <- glm(phoneme_g ~ n_step, family = binomial(link = 'logit'), data = temp_gift)
-  model_gith <- glm(phoneme_g ~ n_step, family = binomial(link = 'logit'), data = temp_gith)
-  model_giss <- glm(phoneme_g ~ n_step, family = binomial(link = 'logit'), data = temp_giss)
-  
-  b_gith = as.numeric(model_gith$coefficients[1])
-  m_gith = as.numeric(model_gith$coefficients[2]) 
-  i_gith = -b_gith/m_gith #-intercept/slope
-  dev_fit_gith = as.numeric(deviance(model_gith))
-  gith_x = data.frame('n_step' = i_gith)
-  value_gith_frame = data.frame(gith_x$n_step, predict(model_gith, list(n_step = gith_x$n_step), type = 'response'))
-  value_gith = value_gith_frame[[2]]
-  new2 = c(sub, "gith", temp_group, temp_age, temp_com_cond, m_gith, i_gith, value_gith, dev_fit_gith)
-  d_glm_fit[index, ] = new2
-  index = index + 1
-  
-  b_gift = as.numeric(model_gift$coefficients[1])
-  m_gift = as.numeric(model_gift$coefficients[2]) #slope
-  i_gift = -b_gift/m_gift  #inflection
-  dev_fit_gift = as.numeric(deviance(model_gift))
-  value_gift_frame = data.frame(gith_x$n_step, predict(model_gift, list(n_step = gith_x$n_step), type = 'response'))
-  value_gift = value_gift_frame[[2]]
-  new1 = c(sub, "gift", temp_group, temp_age, temp_com_cond, m_gift, i_gift, value_gift, dev_fit_gift)
-  d_glm_fit[index, ] = new1
-  index = index + 1
-  
-  b_giss = as.numeric(model_giss$coefficients[1])
-  m_giss = as.numeric(model_giss$coefficients[2]) #slope
-  i_giss = -b_giss/m_giss #inflection
-  dev_fit_giss = as.numeric(deviance(model_giss))
-  value_giss_frame = data.frame(gith_x$n_step, predict(model_giss, list(n_step = gith_x$n_step), type = 'response'))
-  value_giss = value_giss_frame[[2]]
-  new3 = c(sub, "giss", temp_group, temp_age, temp_com_cond, m_giss, i_giss, value_giss, dev_fit_giss)
-  d_glm_fit[index, ] = new3
+for (ss in subj_outliers){
+  print(ss);
+  print(head(all_data_fitted[all_data_fitted$subj_id == ss,]))
 }
 
-d_glm_fit$slope_coef = as.numeric(d_glm_fit$slope_coef)
-d_glm_fit$inflection_step = as.numeric(d_glm_fit$inflection_step)
-d_glm_fit$deviance = as.numeric(d_glm_fit$deviance)
-d_glm_fit$word<-as.factor(d_glm_fit$word)
-d_glm_fit$group<-as.factor(d_glm_fit$group)
-d_glm_fit$age<-as.factor(d_glm_fit$age)
+# filter out as below or combine GK and DT (same)
+# all_data_fitted_filt <- rbind(GK_data_fitted_filt, DT_data_fitted_filt)
 
+# remove outliers and non-word pairs
+all_data_fitted_filt  <- subset(all_data_fitted,  all_data_fitted$slope > 0 & all_data_fitted$wordPairType != 3)
+
+# factor settings
+all_data_fitted_filt <- data.frame(all_data_fitted_filt)
+all_data_fitted_filt$subj_id <- as.factor(all_data_fitted_filt$subj_id)
+all_data_fitted_filt$isAdult <- as.factor(all_data_fitted_filt$isAdult)
+all_data_fitted_filt$isDys <- as.factor(all_data_fitted_filt$isDys)
+all_data_fitted_filt$wordPairType <- as.factor(all_data_fitted_filt$wordPairType)
+all_data_fitted_filt$phonemeContr <- as.factor(all_data_fitted_filt$phonemeContr)
+all_data_fitted_filt$word <- as.factor(all_data_fitted_filt$word)
+
+# set contrasts 
+contrasts(all_data_fitted_filt$isAdult) <- contr.sum(2)
+contrasts(all_data_fitted_filt$isDys) <- contr.sum(2)
+contrasts(all_data_fitted_filt$wordPairType) <- contr.sum(2)
+contrasts(all_data_fitted_filt$phonemeContr) <- contr.sum(2)
+
+# final sample size
+counts = all_data_fitted_filt %>% 
+  dplyr::group_by(isAdult,isDys) %>% 
+  dplyr::summarise(n_distinct(subj_id))
+
+
+# SLOPE LME ANOVA 
+
+# check for equal variance
+bartlett.test(slope ~ isDys,data = all_data_fitted_filt)
+bartlett.test(slope ~ isAdult,data = all_data_fitted_filt)
+
+lme.slope1 <- lmer(log(slope) ~ isDys * isAdult * wordPairType * phonemeContr + (1|subj_id), data = all_data_fitted_filt)
+Anova(lme.slope1, type=3)
+difflsmeans(lme.slope1)
+
+#posthoc
+lsmeans(lme.slope1, list(pairwise ~ isDys|phonemeContr), adjust = "tukey") #sig slope diff for g/k, not d/t
+lsmeans(lme.slope1, list(pairwise ~ wordPairType|phonemeContr), adjust = "tukey")
+
+# SLOPE IN NEUTRAL
+#no group differences
+
+d_glm_fit_neut=all_data_fitted%>%filter(word=="gith"|word=="dath")
+
+lme.slope2 <- lmer(log_slope ~ isDys * isAdult  * phonemeContr + (1|subj_id), data = d_glm_fit_neut)
+Anova(lme.slope2, type=3)
+
+# INFLECTION: LME
+inflection_model_all.lme.full <- lmer(inflection ~ isDys * isAdult * wordPairType * phonemeContr + (1|subj_id), data = all_data_fitted_filt)
+Anova(inflection_model_all.lme.full, type = "III")
+
+#posthoc
+lsmeans(inflection_model_all.lme.full, list(pairwise ~ isDys|isAdult|wordPairType ), adjust = "tukey") 
+lsmeans(inflection_model_all.lme.full, list(pairwise ~ isDys|isAdult|wordPairType ), adjust = "tukey")
+lsmeans(inflection_model_all.lme.full, list(pairwise ~ phonemeContr), adjust = "tukey")
 ```
+
+```{r}
+
+### DIFFERENCE IN inflection in the two word pairs -- 2nd level agregation
+ALL_data_infDiff <- read.csv("~/Dropbox (MIT)/GitHub/DysComp/SJ/ALL_data_infDiff.csv")# COMBINED DT and GK difference dataset
+
+# FILTER OUT slope <= 0 (NA) just in case.
+ALL_data_infDiff <- subset(ALL_data_infDiff, !is.na(ALL_data_infDiff$log_slope))
+
+# factor setting
+ALL_data_infDiff$subj_id <- as.factor(ALL_data_infDiff$subj_id)
+ALL_data_infDiff$isAdult <- as.factor(ALL_data_infDiff$isAdult)
+ALL_data_infDiff$isDys <- as.factor(ALL_data_infDiff$isDys)
+ALL_data_infDiff$phonemeContr <- as.factor(ALL_data_infDiff$phonemeContr)
+
+# contrast setting (in case running linear model)
+contrasts(ALL_data_infDiff$isAdult) <- contr.sum(2)
+contrasts(ALL_data_infDiff$isDys) <- contr.sum(2)
+contrasts(ALL_data_infDiff$phonemeContr) <- contr.sum(2)
+
+
+#### Inflection difference between two words -- including phoneme contrast factor
+diff_inf_model_all.lm1 <- lmer(inflection ~ isDys * isAdult * phonemeContr + (1|subj_id), data = ALL_data_infDiff)
+Anova(diff_inf_model_all.lm1, type = "III")
+
+
+emmeans(diff_inf_model_all.lm1, pairwise ~ isAdult * isDys)
+# Typ: Child > Adult
+# Dys: n.s. but Adult > Child 
+
+lsmeans(diff_inf_model_all.lm1, list(pairwise ~ isDys|isAdult), adjust = "tukey") 
+
+emmeans(diff_inf_model_all.lm1, pairwise ~ phonemeContr)
+# gk > dt (greater ganong effect)
+
+
+# average values of all data -- and used for TRACE modeling
+aggregate(inflection ~ isDys * isAdult, mean, data = ALL_data_infDiff)
+aggregate(log_slope ~ isDys * isAdult, mean, data = ALL_data_infDiff)
+```
+
 
 ## Fit Logistic Regression D
 
@@ -387,43 +422,35 @@ contrasts(d_glm_fit_filt$pair) <- contr.sum(2)
 
 #### Slope across conditions
 
-- Main effect for group with larger slope in Typ as compared to Dys across ages and word pairs
+- Main effect for word and age 
 ```{r, echo=FALSE}
 
 # slope across conditions
-#d_glm_fit_n_gith=d_glm_fit%>%filter(word=="gift"|word=="giss")
-model_slope<-lmer(log_slope~group*age*word++ (1|PartID), data=d_glm_fit_filt)
-Anova(model_slope,type = "III") #word and age sig
+model_slope<-lmer(log_slope~group*age*word+ (1|PartID), data=d_glm_fit_filt)
+Anova(model_slope,type = "III") #word and age sig, group is not
 eta_sq(model_slope)
 
 #posthoc
-lsmeans(model_slope, list(pairwise ~ group), adjust = "tukey")
+lsmeans(model_slope, list(pairwise ~ word), adjust = "tukey") 
 lsmeans(model_slope, list(pairwise ~ age), adjust = "tukey")
-lsmeans(model_slope, list(pairwise ~ pair), adjust = "tukey")
 ```
-#### Try ANOVA-Type III
+
+#### Slope for neutral only
+
+- Main effects for group and age
 ```{r, echo=FALSE}
-# ##try Type III
-# contrasts(d_glm_fit$age) <- contr.sum(2)
-# contrasts(d_glm_fit$group) <- contr.sum(2)
-# contrasts(d_glm_fit$word) <- contr.sum(6)
-# contrasts(d_glm_fit$pair) <- contr.sum(2)
-# 
-# #
-# require(car)
-# model_slope3 <- lm(slope_coef_t ~ group*age*pair*word,, data = d_glm_fit)
-# Anova(model_slope3, type = "III") #model is signular
-# lsmeans(model_slope, list(pairwise ~ group), adjust = "tukey")
+d_glm_fit_neut=d_glm_fit_filt%>%filter(word=="gith"|word=="dath")
+model_slope2<-lmer(log_slope~group*age*word+(1|PartID), data=d_glm_fit_neut)
+Anova(model_slope2,type = "III") #group and age sig
+eta_sq(model_slope)
+lsmeans(model_slope2, list(pairwise ~ age), adjust = "tukey") #smaller slope in children
+lsmeans(model_slope2, list(pairwise ~ group), adjust = "tukey") #smaller slope in Dys
 
 ```
 
-
-### Plot slope effects
-#### Plot Slope all effects for Neurtral
-#decide which one to display..
+#Slope effects for neutral condition
 ```{r, echo=FALSE}
-d_glm_m_slope = d_glm_fit %>%
-    filter(word=='gith'|word=='dath') %>%
+d_glm_m_slope = d_glm_fit_neut  %>%
   dplyr::group_by(PartID, group,com_cond) %>%
   dplyr::summarise(mean = mean(slope_coef_t, na.rm = T))
 
@@ -439,65 +466,23 @@ two.group.unpaired.meandiff<- dabestr::cohens_d(multi.group)
 
 plot(two.group.unpaired.meandiff, color.column = group,rawplot.ylabel = "Slope")
 ```
-#### Plot Slope /G/ Effects
-
-```{r, echo=FALSE}
-d_glm_m_slope = d_glm_fit %>%
-  filter(pair=='G') %>%
-  dplyr::group_by(PartID, group,com_cond) %>%
-  dplyr::summarise(mean = mean(slope_coef_t, na.rm = T))
-
-multi.group <- 
-  d_glm_m_slope %>%
-  dabest(com_cond,mean, 
-         idx = list(c("Dys - Adult", "Typ - Adult")
-                    ,c("Dys - Child","Typ - Child")),
-         paired = FALSE
-  )
-
-two.group.unpaired.meandiff_g <- dabestr::cohens_d(multi.group)
-
-plot(two.group.unpaired.meandiff_g, color.column = group,rawplot.ylabel = "Slope")
-
-```
-
-#### Plot Slope /D/ Effects
-
-```{r, echo=FALSE}
-d_glm_m_slope = d_glm_fit %>%
-  filter(pair=='D') %>%
-  dplyr::group_by(PartID, group,com_cond) %>%
-  dplyr::summarise(mean = mean(slope_coef_t, na.rm = T))
-
-multi.group <- 
-  d_glm_m_slope %>%
-  dabest(com_cond,mean, 
-         idx = list(c("Dys - Adult", "Typ - Adult")
-                    ,c("Dys - Child","Typ - Child")),
-         paired = FALSE
-  )
-
-two.group.unpaired.meandiff_d <- dabestr::cohens_d(multi.group)
-
-plot(two.group.unpaired.meandiff_d, color.column = group,rawplot.ylabel = "Slope")
-
-```
 
 ## Inflection
 
 - There is a larger effect for inflection in Dys Adults as compared to Typ adults
 - No inflection differences in children
 ```{r, ,echo=FALSE}
-#d_glm_fit$word_pair = paste(d_glm_fit$word, "-", d_glm_fit$pair)
 
-d_glm_fit_n_gith=d_glm_fit%>%filter(word!="gith" & word!="dath")
-#eta_sq(LME_model_i_nogith)
-m1<-lm(inflection_step~word*group*age*pair,data=d_glm_fit_n_gith)
-anova(m1)
+sum(d_glm_fit_filt$inflection_step < 1 |d_glm_fit_filt$inflection_step > 7.05) #31/288 (11%) #what percentage out of bounds?
+d_glm_fit_filt<-d_glm_fit_filt %>% filter(inflection_step > 0 & inflection_step < 7.05)
 
+inf_model <- lmer(inflection_step ~ group * age * word + (1|PartID), data = d_glm_fit_filt)
+Anova(inf_model, type = "III")
 
-###Post hoc comparisons
-lsmeans(m1, list(pairwise ~ group|age), adjust = "tukey") 
+###Post hoc comparisons- ??which one
+lsmeans(inf_model, list(pairwise ~ group|age), adjust = "tukey") 
+emmeans(inf_model, pairwise ~ age * group)
+
 
 ```
 ### Plot Inflection

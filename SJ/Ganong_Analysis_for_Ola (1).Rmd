@@ -1,0 +1,394 @@
+---
+title: "Ganong analysis for Ola: cleaned out version of the script"
+author: "Sung-Joo Lim"
+date: "7/27/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ez)
+library(stringr)
+library(reshape2)
+library(dplyr)
+library(car)
+library(emmeans)
+library(lmerTest)
+
+
+
+# FINAL DATASET w/ MATLAB FITTING
+GK_data_fitted = data.frame(read.csv('~/Dropbox (MIT)/GitHub/DysComp/SJ/GK_matlab_logistic_fit_wBounds_flip_FINAL.csv', header =T));
+DT_data_fitted = data.frame(read.csv('~/Dropbox (MIT)/GitHub/DysComp/SJ/DT_matlab_logistic_fit_wBounds_flip_FINAL.csv', header =T));
+ALL_data_fitted = data.frame(read.csv('~/Dropbox (MIT)/GitHub/DysComp/SJ/allDATA_matlab_logistic_fit_wBounds_flip_FINAL.csv', header =T));
+
+
+GK_data_fitted$phonemeContr <- rep_len("gk", dim(GK_data_fitted)[1])
+DT_data_fitted$phonemeContr <- rep_len("dt", dim(DT_data_fitted)[1])
+ALL_data_fitted$phonemeContr <- ifelse(ALL_data_fitted$isGK == 1, "gk","dt")
+
+
+# coding for word pair conditions
+# 1: voiced word-unvoiced non-word
+# 2: unvoiced word-voiced non-word
+# 3: non-word pairs
+GK_data_fitted$word <- ifelse(GK_data_fitted$wordPairType == 1, "gift",
+                              ifelse(GK_data_fitted$wordPairType == 2, "giss",
+                                     "gith"))
+DT_data_fitted$word <- ifelse(DT_data_fitted$wordPairType == 1, "dash",
+                              ifelse(DT_data_fitted$wordPairType == 2, "dask",
+                                     "dath"))
+ALL_data_fitted$word <- ifelse(ALL_data_fitted$wordPairType == 1 & ALL_data_fitted$isGK == 1, "gift", 
+                                ifelse(GK_data_fitted$wordPairType == 2 & ALL_data_fitted$isGK == 1, "giss",
+                                    ifelse(GK_data_fitted$wordPairType == 3 & ALL_data_fitted$isGK == 1, "gith",
+                        ifelse(ALL_data_fitted$wordPairType == 1 & ALL_data_fitted$isGK == 0, "dash", 
+                                ifelse(GK_data_fitted$wordPairType == 2 & ALL_data_fitted$isGK == 0, "dask",
+                                    "dath")))))
+
+# log slope
+ALL_data_fitted$log_slope <- log(ALL_data_fitted$slope)
+ALL_data_fitted$log_slope <- ifelse(ALL_data_fitted$slope<=0, NA, ALL_data_fitted$log_slope)
+
+
+##### ADD NAMING FOR FIGURES GGPLOT BARS 
+ALL_data_fitted$group_adults <- ifelse(ALL_data_fitted$isAdult == 1, "Adult","Child") 
+ALL_data_fitted$group_dys <- ifelse(ALL_data_fitted$isDys == 1, "Dys","Typ") 
+ALL_data_fitted$groupName_comb <- paste(ALL_data_fitted$group_adults,
+                                        ALL_data_fitted$group_dys,sep = "-")
+
+##### COMPLETE DATASET to TKP
+# write.table(ALL_data_fitted, file = '~/Dropbox/Doc/Projects_at_BU/other/Ganong-Ola/Ola_data/logisticfit_MATLAB_alldata_FINAL.csv', quote = FALSE, sep = ',', na="NA", row.names = FALSE, col.names = TRUE)
+
+
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r GK only}
+
+# 1. exclude subject with 0 slope (and the corresponding inflection pt) in any word types
+subj_outliers = unique(GK_data_fitted$subj_id[GK_data_fitted$slope <= 0])
+length(subj_outliers)
+
+for (ss in subj_outliers){
+  print(ss);
+  print(head(GK_data_fitted[GK_data_fitted$subj_id == ss,]))
+}
+
+subj_outliers = unique(GK_data_fitted$subj_id[GK_data_fitted$wordPairType != 3 & GK_data_fitted$slope <= 0])
+length(subj_outliers)
+
+# 2. filtered GK data: exclude the outlier subject data & non-word pairs
+GK_data_fitted_filt <- subset(GK_data_fitted,  GK_data_fitted$slope > 0 & GK_data_fitted$wordPairType !=3)
+
+GK_data_fitted_filt$log_slope <- log(GK_data_fitted_filt$slope)
+
+
+# group naming columns
+GK_data_fitted_filt$group_a <- ifelse(GK_data_fitted_filt$isAdult == 1, "Adult","Child") 
+GK_data_fitted_filt$group_d <- ifelse(GK_data_fitted_filt$isDys == 1, "Dys","Typ") 
+GK_data_fitted_filt$group_comb <- paste(GK_data_fitted_filt$group_a,
+                                        GK_data_fitted_filt$group_d,sep = "-")
+
+
+# check the number of data points / condition (~2x for each subject)
+aggregate(wordPairType ~ isAdult * isDys, FUN=NROW, data = GK_data_fitted_filt)
+
+
+# 3. factor setting
+GK_data_fitted_filt$subj_id <- as.factor(GK_data_fitted_filt$subj_id)
+GK_data_fitted_filt$isAdult <- as.factor(GK_data_fitted_filt$isAdult)
+GK_data_fitted_filt$isDys <- as.factor(GK_data_fitted_filt$isDys)
+GK_data_fitted_filt$wordPairType <- as.factor(GK_data_fitted_filt$wordPairType)
+
+# 4. contrast setting (in case running linear model)
+contrasts(GK_data_fitted_filt$isAdult) <- contr.sum(2)
+contrasts(GK_data_fitted_filt$isDys) <- contr.sum(2)
+contrasts(GK_data_fitted_filt$wordPairType) <- contr.sum(2)
+
+
+
+#### GK -- SLOPE MODEL
+gk_slope_model <- lmer(log(slope) ~ isDys * isAdult * wordPairType + (1|subj_id), data = GK_data_fitted_filt)
+Anova(gk_slope_model, type = "III")
+
+
+#### GK -- INFLECTION 
+gk_inf_model <- lmer(inflection ~ isDys * isAdult * wordPairType + (1|subj_id), data = GK_data_fitted_filt)
+Anova(gk_inf_model, type = "III")
+
+# posthoc testing
+emmeans(gk_inf_model, pairwise ~ isAdult * isDys)
+emmeans(gk_inf_model, pairwise ~ isAdult * isDys * wordPairType)
+emmeans(gk_inf_model, pairwise ~ wordPairType)
+emmeans(gk_inf_model, pairwise ~ isAdult * wordPairType)
+
+
+
+##### DIFFERENCE OF INFLECTION IN TWO WORDS (i.e., Ganong effect)
+# to make sure that we have word pair conditions 1 & 2
+tmp <- subset(GK_data_fitted, GK_data_fitted$wordPairType !=3)
+tmp$slope <- ifelse(tmp$slope <= 0, NA, tmp$slope)
+tmp$inflection <- ifelse(tmp$slope <= 0, NA, tmp$inflection)
+tmp$log_slope <- log(tmp$slope)
+
+tmp_w1 <- subset(tmp, tmp$wordPairType == 1)
+tmp_w2 <- subset(tmp, tmp$wordPairType == 2)
+
+GK_data_infDiff <- tmp_w1
+GK_data_infDiff$slope <- tmp_w2$slope - tmp_w1$slope
+GK_data_infDiff$log_slope <- tmp_w2$log_slope - tmp_w1$log_slope
+GK_data_infDiff$inflection <- tmp_w2$inflection - tmp_w1$inflection
+GK_data_infDiff$wordPairType <- NULL
+GK_data_infDiff$word <- NULL
+
+
+# counting subjects showing slope <= 0 (n=14 data points excluded)
+sum(is.na(GK_data_infDiff$slope))
+GK_data_infDiff[is.na(GK_data_infDiff$slope),2:3]
+aggregate(subj_id ~ isAdult * isDys, FUN=NROW, data = GK_data_infDiff)
+# excluding...:
+# n=6 / 32 child typ (0,0) .... FINAL n = 26
+# n=2 / 29 adult typ (1,0) .... FINAL n = 27 
+# n=4 / 25 child dys (0,1) .... FINAL n = 21
+# n=2 / 28 adult dys (1,1) .... FINAL n = 26
+
+# filter out slope <= 0 data points
+GK_data_infDiff <- subset(GK_data_infDiff, !is.na(GK_data_infDiff$slope))
+
+
+# factor and contrast settings
+GK_data_infDiff$isAdult <- as.factor(GK_data_infDiff$isAdult)
+GK_data_infDiff$isDys <- as.factor(GK_data_infDiff$isDys)
+contrasts(GK_data_infDiff$isAdult) <- contr.sum(2)
+contrasts(GK_data_infDiff$isDys) <- contr.sum(2)
+
+
+# running regular LM due to 1 data point / subject
+diff_inf_model_gk <- lm(inflection ~ isDys * isAdult, data = GK_data_infDiff)
+Anova(diff_inf_model_gk, type = "III")
+
+# post-hoc
+# child > adults
+emmeans(diff_inf_model_gk, pairwise ~ isAdult)
+# Typ: child >> adults
+# Dys: child ~ adults (n.s.)
+emmeans(diff_inf_model_gk, pairwise ~ isAdult * isDys)
+
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r DT only}
+
+################################
+###### DT continuum only #######
+################################
+
+# 1. exclude subject with 0 slope (and the corresponding inflection pt) in any word types
+subj_outliers = unique(DT_data_fitted$subj_id[DT_data_fitted$slope <= 0])
+length(subj_outliers)
+
+for (ss in subj_outliers){
+  print(ss);
+  print(head(DT_data_fitted[DT_data_fitted$subj_id == ss,]))
+}
+
+
+DT_data_fitted_filt  <- subset(DT_data_fitted,  DT_data_fitted$slope > 0 & DT_data_fitted$wordPairType != 3)
+DT_data_fitted_filt$log_slope <- log(DT_data_fitted_filt$slope)
+
+# group naming columns
+DT_data_fitted_filt$group_a <- ifelse(DT_data_fitted_filt$isAdult == 1, "Adult","Child") 
+DT_data_fitted_filt$group_d <- ifelse(DT_data_fitted_filt$isDys == 1, "Dys","Typ") 
+DT_data_fitted_filt$group_comb <- paste(DT_data_fitted_filt$group_a,
+                                        DT_data_fitted_filt$group_d,sep = "-")
+
+
+DT_data_fitted_filt$isAdult <- as.factor(DT_data_fitted_filt$isAdult)
+DT_data_fitted_filt$isDys <- as.factor(DT_data_fitted_filt$isDys)
+DT_data_fitted_filt$wordPairType <- as.factor(DT_data_fitted_filt$wordPairType)
+
+# data check 
+aggregate(wordPairType ~ isAdult * isDys, FUN=NROW, data = DT_data_fitted_filt)
+
+
+# contrast setting (in case running linear model)
+contrasts(DT_data_fitted_filt$isAdult) <- contr.sum(2)
+contrasts(DT_data_fitted_filt$isDys) <- contr.sum(2)
+contrasts(DT_data_fitted_filt$wordPairType) <- contr.sum(2)
+
+
+
+#### DT -- SLOPE MODEL
+dt_slope_model <- lmer(log(slope) ~ isDys * isAdult * wordPairType + (1| subj_id), data = DT_data_fitted_filt)
+Anova(dt_slope_model, type = "III")
+
+
+#### DT -- INFLECTION 
+dt_inf_model <- lmer(inflection ~ isDys * isAdult * wordPairType + (1|subj_id), data = DT_data_fitted_filt)
+Anova(dt_inf_model, type = "III")
+
+# posthoc testing
+emmeans(dt_inf_model, pairwise ~ isAdult * isDys)
+emmeans(dt_inf_model, pairwise ~ isAdult * isDys * wordPairType)
+emmeans(dt_inf_model, pairwise ~ wordPairType)
+emmeans(dt_inf_model, pairwise ~ isAdult * wordPairType)
+
+
+##### DIFFERENCE OF INFLECTION IN TWO WORDS (i.e., Ganong effect) -- another aggregation, so do not use this for reporting, but to cross-check
+
+# to keep the word pair conditions in the dataset first
+tmp_dt <- subset(DT_data_fitted, DT_data_fitted$wordPairType !=3)
+tmp_dt$slope <- ifelse(tmp_dt$slope <= 0, NA, tmp_dt$slope)
+tmp_dt$log_slope <- log(tmp_dt$slope)
+
+# NOTE: THIS ASSUMES THE DATA IS PERFECTLY ALIGNED. NESTED FORLOOPS MIGHT BE BETTER
+tmp_dt_w1 <- subset(tmp_dt, tmp_dt$wordPairType == 1)
+tmp_dt_w2 <- subset(tmp_dt, tmp_dt$wordPairType == 2)
+
+DT_data_infDiff <- tmp_dt_w1
+DT_data_infDiff$slope <- tmp_dt_w2$slope - tmp_dt_w1$slope
+DT_data_infDiff$log_slope <- tmp_dt_w2$log_slope - tmp_dt_w1$log_slope
+DT_data_infDiff$inflection <- tmp_dt_w2$inflection - tmp_dt_w1$inflection
+DT_data_infDiff$wordPairType <- NULL
+DT_data_infDiff$word <- NULL
+
+
+# counting subjects showing slope = 0 (n=14)
+sum(is.na(DT_data_infDiff$slope))
+DT_data_infDiff[is.na(DT_data_infDiff$slope),2:3]
+aggregate(subj_id ~ isAdult * isDys, FUN=NROW, data = DT_data_infDiff)
+# excluding...:
+# n=3 / 32 child typ (0,0) .... 29
+# n=0 / 29 adult typ (1,0) .... 29
+# n=1 / 25 child dys (0,1) .... 24
+# n=0 / 28 adult dys (1,1) .... 28
+
+
+# filter out slope <= 0 data points
+DT_data_infDiff <- subset(DT_data_infDiff, !is.na(DT_data_infDiff$slope))
+
+# Factor and contrast settings
+DT_data_infDiff$isAdult <- as.factor(DT_data_infDiff$isAdult)
+DT_data_infDiff$isDys <- as.factor(DT_data_infDiff$isDys)
+contrasts(DT_data_infDiff$isAdult) <- contr.sum(2)
+contrasts(DT_data_infDiff$isDys) <- contr.sum(2)
+
+
+# exclude slope 0 data pts
+DT_data_infDiff <- subset(DT_data_infDiff, !is.na(DT_data_infDiff$log_slope))
+
+diff_inf_model_dt <- lm(inflection ~ isDys * isAdult, data = DT_data_infDiff)
+Anova(diff_inf_model_dt, type = "III")
+
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+```{r ALL DATA COMBINED -- FOR FINAL REPORTING}
+
+all_data_fitted <- ALL_data_fitted
+# (or) Make ALL DATA COMBINED GK & DT 
+# all_data_fitted <- rbind(GK_data_fitted, DT_data_fitted) 
+
+
+################################
+###### ALL DATA COMBINED  ###### 
+################################
+
+# 1. exclude subject with 0 slope (and the corresponding inflection pt) in any word types
+subj_outliers = unique(all_data_fitted$subj_id[all_data_fitted$slope <= 0])
+length(subj_outliers)
+
+for (ss in subj_outliers){
+  print(ss);
+  print(head(all_data_fitted[all_data_fitted$subj_id == ss,]))
+}
+
+# filter out as below or combine GK and DT (same)
+# all_data_fitted_filt <- rbind(GK_data_fitted_filt, DT_data_fitted_filt)
+
+# remove outliers and non-word pairs
+all_data_fitted_filt  <- subset(all_data_fitted,  all_data_fitted$slope > 0 & all_data_fitted$wordPairType != 3)
+
+# factor settings
+all_data_fitted_filt <- data.frame(all_data_fitted_filt)
+all_data_fitted_filt$subj_id <- as.factor(all_data_fitted_filt$subj_id)
+all_data_fitted_filt$isAdult <- as.factor(all_data_fitted_filt$isAdult)
+all_data_fitted_filt$isDys <- as.factor(all_data_fitted_filt$isDys)
+all_data_fitted_filt$wordPairType <- as.factor(all_data_fitted_filt$wordPairType)
+all_data_fitted_filt$phonemeContr <- as.factor(all_data_fitted_filt$phonemeContr)
+all_data_fitted_filt$word <- as.factor(all_data_fitted_filt$word)
+
+# set contrasts 
+contrasts(all_data_fitted_filt$isAdult) <- contr.sum(2)
+contrasts(all_data_fitted_filt$isDys) <- contr.sum(2)
+contrasts(all_data_fitted_filt$wordPairType) <- contr.sum(2)
+contrasts(all_data_fitted_filt$phonemeContr) <- contr.sum(2)
+
+
+# SLOPE LME ANOVA -- results are similar are regular ANOVA models above
+lme.slope1 <- lmer(log(slope) ~ isDys * isAdult * wordPairType * phonemeContr + (1|subj_id), data = all_data_fitted_filt)
+Anova(lme.slope1, type=3)
+
+difflsmeans(lme.slope1)
+
+
+# INFLECTION: LME
+inflection_model_all.lme.full <- lmer(inflection ~ isDys * isAdult * wordPairType * phonemeContr + (1|subj_id), data = all_data_fitted_filt)
+Anova(inflection_model_all.lme.full, type = "III")
+
+
+
+
+### DIFFERENCE IN inflection in the two word pairs -- 2nd level agregation
+ALL_data_infDiff <- rbind(DT_data_infDiff, GK_data_infDiff) # COMBINED DT and GK difference dataset
+
+# FILTER OUT slope <= 0 (NA) just in case.
+ALL_data_infDiff <- subset(ALL_data_infDiff, !is.na(ALL_data_infDiff$log_slope))
+
+# factor setting
+ALL_data_infDiff$subj_id <- as.factor(ALL_data_infDiff$subj_id)
+ALL_data_infDiff$isAdult <- as.factor(ALL_data_infDiff$isAdult)
+ALL_data_infDiff$isDys <- as.factor(ALL_data_infDiff$isDys)
+ALL_data_infDiff$phonemeContr <- as.factor(ALL_data_infDiff$phonemeContr)
+
+# contrast setting (in case running linear model)
+contrasts(ALL_data_infDiff$isAdult) <- contr.sum(2)
+contrasts(ALL_data_infDiff$isDys) <- contr.sum(2)
+contrasts(ALL_data_infDiff$phonemeContr) <- contr.sum(2)
+
+
+#### Inflection difference between two words -- including phoneme contrast factor
+diff_inf_model_all.lm1 <- lmer(inflection ~ isDys * isAdult * phonemeContr + (1|subj_id), data = ALL_data_infDiff)
+Anova(diff_inf_model_all.lm1, type = "III")
+
+
+emmeans(diff_inf_model_all.lm1, pairwise ~ isAdult * isDys)
+# Typ: Child > Adult
+# Dys: n.s. but Adult > Child 
+emmeans(diff_inf_model_all.lm1, pairwise ~ phonemeContr)
+# gk > dt (greater ganong effect)
+
+
+
+
+# average values of all data -- and used for TRACE modeling
+aggregate(inflection ~ isDys * isAdult, mean, data = ALL_data_infDiff)
+aggregate(log_slope ~ isDys * isAdult, mean, data = ALL_data_infDiff)
+
+
+```

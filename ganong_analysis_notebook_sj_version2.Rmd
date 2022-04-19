@@ -92,7 +92,7 @@ y_new_ticks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
 ```
 
 # FINAL DATASET w/ MATLAB FITTING
-
+# wordPairType: 1=gift/dash; 2=giss/dask; 3=gith/dath
 ALL_data_fitted = data.frame(read.csv('~/Dropbox (MIT)/GitHub/DysComp/SJ/allDATA_matlab_logistic_fit_wBounds_flip_FINAL.csv', header =T));
 GK_data_fitted$phonemeContr <- rep_len("gk", dim(GK_data_fitted)[1])
 DT_data_fitted$phonemeContr <- rep_len("dt", dim(DT_data_fitted)[1])
@@ -110,10 +110,12 @@ ALL_data_fitted$log_slope <- ifelse(ALL_data_fitted$slope<=0, NA, ALL_data_fitte
 
 
 ##### ADD NAMING FOR FIGURES GGPLOT BARS 
+
 ALL_data_fitted$group_adults <- ifelse(ALL_data_fitted$isAdult == 1, "Adult","Child") 
 ALL_data_fitted$group_dys <- ifelse(ALL_data_fitted$isDys == 1, "Dys","Typ") 
 ALL_data_fitted$groupName_comb <- paste(ALL_data_fitted$group_adults,
                                         ALL_data_fitted$group_dys,sep = "-")
+
 
 ##Look at raw data
 ### G Pairs
@@ -217,29 +219,29 @@ bartlett.test(slope ~ isDys,data = all_data_fitted_filt)
 bartlett.test(slope ~ isAdult,data = all_data_fitted_filt)
 
 lme.slope1 <- lmer(log(slope) ~ isDys * isAdult * wordPairType * phonemeContr + (1|subj_id), data = all_data_fitted_filt)
-Anova(lme.slope1, type=3)
+anova(lme.slope1, type=3)
 difflsmeans(lme.slope1)
 
 #posthoc
 lsmeans(lme.slope1, list(pairwise ~ isDys|phonemeContr), adjust = "tukey") #sig slope diff for g/k, not d/t
-lsmeans(lme.slope1, list(pairwise ~ wordPairType|phonemeContr), adjust = "tukey")
+lsmeans(lme.slope1, list(pairwise ~ isAdult|phonemeContr), adjust = "tukey") #sig age diff for both contrasts
 
 # SLOPE IN NEUTRAL
-#no group differences
+#no group differences except for age
 
 d_glm_fit_neut=all_data_fitted%>%filter(word=="gith"|word=="dath")
 
 lme.slope2 <- lmer(log_slope ~ isDys * isAdult  * phonemeContr + (1|subj_id), data = d_glm_fit_neut)
-Anova(lme.slope2, type=3)
+anova(lme.slope2, type=3)
 
 # INFLECTION: LME
+#sig group effects for children and adults in gift/dash, but not kiss/task
 inflection_model_all.lme.full <- lmer(inflection ~ isDys * isAdult * wordPairType * phonemeContr + (1|subj_id), data = all_data_fitted_filt)
-Anova(inflection_model_all.lme.full, type = "III")
+anova(inflection_model_all.lme.full, type = "III")
 
 #posthoc
 lsmeans(inflection_model_all.lme.full, list(pairwise ~ isDys|isAdult|wordPairType ), adjust = "tukey") 
-lsmeans(inflection_model_all.lme.full, list(pairwise ~ isDys|isAdult|wordPairType ), adjust = "tukey")
-lsmeans(inflection_model_all.lme.full, list(pairwise ~ phonemeContr), adjust = "tukey")
+lsmeans(inflection_model_all.lme.full, list(pairwise ~ isAdult|wordPairType|phonemeContr ), adjust = "tukey")
 ```
 
 ```{r}
@@ -264,7 +266,7 @@ contrasts(ALL_data_infDiff$phonemeContr) <- contr.sum(2)
 
 #### Inflection difference between two words -- including phoneme contrast factor
 diff_inf_model_all.lm1 <- lmer(inflection ~ isDys * isAdult * phonemeContr + (1|subj_id), data = ALL_data_infDiff)
-Anova(diff_inf_model_all.lm1, type = "III")
+anova(diff_inf_model_all.lm1, type = "III")
 
 
 emmeans(diff_inf_model_all.lm1, pairwise ~ isAdult * isDys)

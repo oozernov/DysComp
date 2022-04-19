@@ -11,7 +11,7 @@ output:
 ```{r, include=FALSE,echo=FALSE}
 Packages <- c("dplyr", "reshape", "magrittr", "tidyr", "ggplot2", 
               "lme4", "lmerTest","emmeans", "sjstats", "plotrix","dabestr","lmerTest",
-              "lmPerm","gridExtra", "grid","ggpubr","ez","stringr","car")
+              "lmPerm","gridExtra", "grid","ggpubr","ez","stringr","car","sjmisc")
 lapply(Packages, library, character.only = TRUE)
 ```
 
@@ -336,6 +336,8 @@ names(d_glm_fit_d)[names(d_glm_fit_d) == 'value_at_dath_i'] <- 'value_at_i'
 d_glm_fit<-rbind(d_glm_fit,d_glm_fit_d)
 d_glm_fit$word<-as.factor(d_glm_fit$word)
 d_glm_fit$pair<-as.factor(d_glm_fit$pair)
+d_glm_fit$wordPairType<-as.factor(ifelse(d_glm_fit$word=="gift"|d_glm_fit$word=="dash",1,
+                                  ifelse(d_glm_fit$word=="giss"|d_glm_fit$word=="dask",2,3)))
 
 ```
 
@@ -379,8 +381,10 @@ aggregate(word ~ age * group, FUN=NROW, data = d_glm_fit_filt)
 contrasts(d_glm_fit_filt$age) <- contr.sum(2)
 contrasts(d_glm_fit_filt$group) <- contr.sum(2)
 contrasts(d_glm_fit_filt$pair) <- contr.sum(2)
-```
+contrasts(d_glm_fit_filt$word) <- contr.sum(6)
 
+contrasts(d_glm_fit_filt$wordPairType) <- contr.sum(3)
+```
 
 
 ## Slope Analysis
@@ -392,29 +396,13 @@ contrasts(d_glm_fit_filt$pair) <- contr.sum(2)
 
 # slope across conditions
 #d_glm_fit_n_gith=d_glm_fit%>%filter(word=="gift"|word=="giss")
-model_slope<-lmer(log_slope~group*age*word++ (1|PartID), data=d_glm_fit_filt)
-Anova(model_slope,type = "III") #word and age sig
-eta_sq(model_slope)
+model_slope<-lmer(log_slope~group*age*wordPairType*pair+(1|PartID), data=d_glm_fit_filt)
+anova(model_slope,type = "III") #word and age sig
 
 #posthoc
+lsmeans(model_slope, list(pairwise ~ group|pair), adjust = "tukey") #sig for g not d
+lsmeans(model_slope, list(pairwise ~ age|pair), adjust = "tukey")
 lsmeans(model_slope, list(pairwise ~ group), adjust = "tukey")
-lsmeans(model_slope, list(pairwise ~ age), adjust = "tukey")
-lsmeans(model_slope, list(pairwise ~ pair), adjust = "tukey")
-```
-#### Try ANOVA-Type III
-```{r, echo=FALSE}
-# ##try Type III
-# contrasts(d_glm_fit$age) <- contr.sum(2)
-# contrasts(d_glm_fit$group) <- contr.sum(2)
-# contrasts(d_glm_fit$word) <- contr.sum(6)
-# contrasts(d_glm_fit$pair) <- contr.sum(2)
-# 
-# #
-# require(car)
-# model_slope3 <- lm(slope_coef_t ~ group*age*pair*word,, data = d_glm_fit)
-# Anova(model_slope3, type = "III") #model is signular
-# lsmeans(model_slope, list(pairwise ~ group), adjust = "tukey")
-
 ```
 
 
